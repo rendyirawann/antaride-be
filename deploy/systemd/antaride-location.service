@@ -1,0 +1,90 @@
+# ==============================================================================
+#  Antaride — layanan lokasi (Go)
+# ==============================================================================
+#      cd /var/www/antaride-be/services/location-service
+#      go build -o /usr/local/bin/antaride-location .
+#      sudo cp antaride-location.service /etc/systemd/system/
+#      sudo systemctl daemon-reload
+#      sudo systemctl enable --now antaride-location
+# ==============================================================================
+#
+#  KENAPA PROSES TERSENDIRI, BUKAN ENDPOINT LARAVEL
+#  ---------------------------------------------------------------------------
+#  Seribu driver dengan ping tiap empat detik adalah 250 request per detik yang
+#  isinya dua angka. Tidak ada satu pun fitur framework yang dibutuhkan untuk
+#  itu: tidak ada session, tidak ada Eloquent, tidak ada Blade. Yang dilakukannya
+#  satu GEOADD ke Redis.
+#
+#  Menjalankannya lewat Octane berarti 250 request per detik itu berebut worker
+#  dengan request yang benar-benar butuh Laravel — pemesanan, penyelesaian order,
+#  panel admin.
+# ==============================================================================
+
+[Unit]
+Description=Antaride location service (Go)
+After=network-online.target redis-server.service
+Requires=redis-server.service
+
+[Service]
+Type=simple
+
+# ------------------------------------------------------------------------------
+#  Pengguna TERSENDIRI, bukan www-data
+# ------------------------------------------------------------------------------
+#  Layanan ini tidak perlu membaca satu berkas pun dari direktori aplikasi
+#  setelah dibangun. Menjalankannya sebagai pengguna yang berbeda berarti satu
+#  kerentanan di sini tidak memberi akses ke `.env`, ke storage KYC, maupun ke
+#  kode PHP.
+#
+#      sudo useradd --system --no-create-home --shell /usr/sbin/nologin antaride-loc
+User=antaride-loc
+Group=antaride-loc
+
+# ------------------------------------------------------------------------------
+#  Konfigurasi lewat environment, bukan berkas
+# ------------------------------------------------------------------------------
+#  RAHASIA HMAC-nya HARUS SAMA dengan `LOCATION_SERVICE_SHARED_SECRET` di `.env`
+#  Laravel. Kalau berbeda, SETIAP ping ditolak 401 — dan yang terlihat di
+#  aplikasi driver hanya peringatan "posisi belum terkirim" setelah tiga
+#  kegagalan. Tidak ada apa pun yang menyebut rahasianya.
+#
+#  Simpan di berkas terpisah ber-permission 0600, bukan di unit ini: unit systemd
+#  bisa dibaca semua pengguna lewat `systemctl cat`.
+#
+#      sudo install -m 0600 -o root -g root /dev/null /etc/antaride/location.env
+#      sudo tee /etc/antaride/location.env <<'ENVEOF'
+#      ANTARIDE_LOCATION_ADDR=127.0.0.1:8200
+#      ANTARIDE_LOCATION_SECRET=<sama dengan LOCATION_SERVICE_SHARED_SECRET>
+#      ANTARIDE_REDIS_ADDR=127.0.0.1:6379
+#      ANTARIDE_REDIS_PASSWORD=<sama dengan REDIS_PASSWORD>
+#      ANTARIDE_REDIS_DB=0
+#      ENVEOF
+EnvironmentFile=/etc/antaride/location.env
+
+ExecStart=/usr/local/bin/antaride-location
+
+Restart=always
+RestartSec=2
+
+# ------------------------------------------------------------------------------
+#  Pengerasan lebih ketat daripada Octane
+# ------------------------------------------------------------------------------
+#  Layanan ini tidak menulis apa pun ke disk. Jadi seluruh filesystem read-only,
+#  dan tidak ada satu pun `ReadWritePaths`.
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+NoNewPrivileges=true
+
+# Hanya boleh bicara IPv4/IPv6 dan unix socket. Tidak ada alasan layanan ini
+# membuka socket jenis lain.
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+
+# Tidak butuh capability apa pun: dia mendengarkan di port 8200 (>1024).
+CapabilityBoundingSet=
+AmbientCapabilities=
+
+LimitNOFILE=65535
+
+[Install]
+WantedBy=multi-user.target

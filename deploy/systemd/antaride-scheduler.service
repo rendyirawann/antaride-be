@@ -1,0 +1,56 @@
+# ==============================================================================
+#  Antaride — scheduler Laravel
+# ==============================================================================
+#  Dijalankan `antaride-scheduler.timer` setiap menit. Pasang KEDUANYA:
+#
+#      sudo cp antaride-scheduler.service antaride-scheduler.timer /etc/systemd/system/
+#      sudo systemctl daemon-reload
+#      sudo systemctl enable --now antaride-scheduler.timer
+#
+#  Periksa:  systemctl list-timers antaride-scheduler
+# ==============================================================================
+#
+#  KENAPA TIMER, BUKAN CRON
+#  ---------------------------------------------------------------------------
+#  Keduanya bekerja. Yang dibeli timer systemd:
+#
+#    * Log-nya di journalctl bersama seluruh unit Antaride lainnya. Dengan cron,
+#      output-nya pergi ke email root yang tidak pernah dibaca siapa pun.
+#    * `systemctl list-timers` memperlihatkan kapan terakhir jalan dan kapan
+#      berikutnya. Cron tidak menyimpan itu.
+#    * `Persistent=true` menjalankan yang terlewat setelah server mati. Cron
+#      melewatkannya diam-diam.
+#
+#  YANG DIJALANKANNYA
+#  ---------------------------------------------------------------------------
+#  Lihat `routes/console.php`. Yang paling penting: agregasi metrik harian
+#  (dashboard backoffice membaca `metrics_daily`, dan tanpa agregasi grafiknya
+#  menampilkan nol untuk setiap hari) dan pemangkasan log.
+#
+#  JADWALNYA DISETEL Asia/Jakarta, TAPI `schedule:list` MENAMPILKANNYA UTC.
+#  `18:30` di daftar berarti 01:30 WIB. Perbedaan tujuh jam ini yang paling
+#  sering disalahpahami saat memeriksa apakah jadwalnya benar.
+# ==============================================================================
+
+[Unit]
+Description=Antaride Laravel scheduler
+After=network-online.target redis-server.service postgresql.service
+
+[Service]
+Type=oneshot
+User=www-data
+Group=www-data
+WorkingDirectory=/var/www/antaride-be
+
+# `schedule:run`, BUKAN `schedule:work`.
+#
+# `schedule:work` adalah proses yang hidup terus dan memanggil dirinya setiap
+# menit — berguna di lokal, salah di sini: timer systemd sudah melakukan
+# penjadwalannya, dan dua penjadwal berarti setiap tugas jalan dua kali.
+ExecStart=/usr/bin/php artisan schedule:run
+
+ProtectSystem=full
+ProtectHome=true
+NoNewPrivileges=true
+PrivateTmp=true
+ReadWritePaths=/var/www/antaride-be/storage /var/www/antaride-be/bootstrap/cache

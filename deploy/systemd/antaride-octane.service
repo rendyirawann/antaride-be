@@ -1,0 +1,107 @@
+# ==============================================================================
+#  Antaride — Laravel Octane (RoadRunner)
+# ==============================================================================
+#  Pasang:
+#      sudo cp antaride-octane.service /etc/systemd/system/
+#      sudo systemctl daemon-reload
+#      sudo systemctl enable --now antaride-octane
+#
+#  Lihat:  journalctl -u antaride-octane -f
+# ==============================================================================
+
+[Unit]
+Description=Antaride Laravel Octane (RoadRunner)
+Documentation=https://github.com/rendyirawann/antaride-be
+
+# Octane TIDAK boleh jalan sebelum Redis siap.
+#
+# `After=` saja tidak cukup: dia hanya mengatur URUTAN start, bukan syaratnya.
+# Kalau Redis gagal start, `After=` membiarkan Octane tetap jalan — dan setiap
+# request gagal dengan galat koneksi Redis, sementara systemd melaporkan
+# Octane "active (running)".
+#
+# `Requires=` yang membuat kegagalan Redis ikut menghentikan Octane, sehingga
+# yang terlihat di `systemctl status` adalah penyebabnya.
+After=network-online.target redis-server.service postgresql.service
+Wants=network-online.target
+Requires=redis-server.service
+
+[Service]
+Type=simple
+
+# ------------------------------------------------------------------------------
+#  Pengguna
+# ------------------------------------------------------------------------------
+#  BUKAN root. Proses yang menulis ke storage/ dan membaca .env tidak butuh root,
+#  dan satu kerentanan RCE pada proses root berarti seluruh server.
+#
+#  Pengguna yang sama dengan yang dipakai Nginx (`www-data` di Debian/Ubuntu),
+#  supaya berkas yang ditulis Octane ke `storage/framework/views` bisa dibaca
+#  Nginx — dan supaya berkas yang diunggah lewat Nginx bisa dibaca Octane.
+User=www-data
+Group=www-data
+
+WorkingDirectory=/var/www/antaride-be
+
+# ------------------------------------------------------------------------------
+#  Perintahnya
+# ------------------------------------------------------------------------------
+#  `--host=127.0.0.1` — HANYA localhost. Octane tidak boleh bisa dihubungi dari
+#  internet: dia tidak punya TLS, tidak punya rate limit, dan tidak tahu apa pun
+#  soal `X-Forwarded-*` kecuali yang diberikan Nginx. Port 8000 yang terbuka ke
+#  publik adalah jalan memutari SELURUH konfigurasi Nginx, termasuk allowlist IP
+#  admin.
+#
+#  `--workers` sebaiknya = jumlah core. Bawaan Octane `auto` sudah begitu;
+#  ditulis eksplisit supaya terlihat saat menyetel ulang.
+#
+#  `--max-requests=500` — worker DIBUANG setelah 500 request.
+#
+#  Ini bukan optimasi, tapi jaring pengaman. Worker Octane hidup lama, jadi
+#  kebocoran memori yang di PHP biasa hilang setiap request akan menumpuk di
+#  sini sampai OOM. Membuang worker secara berkala membatasi kerusakannya pada
+#  satu worker, bukan seluruh proses.
+ExecStart=/usr/bin/php artisan octane:start \
+    --server=roadrunner \
+    --host=127.0.0.1 \
+    --port=8000 \
+    --rpc-port=6001 \
+    --workers=4 \
+    --max-requests=500
+
+# ------------------------------------------------------------------------------
+#  Reload tanpa memutus request
+# ------------------------------------------------------------------------------
+#  `octane:reload` memberi tahu worker untuk berhenti SETELAH menyelesaikan
+#  request yang sedang berjalan, lalu diganti worker baru dengan kode terbaru.
+#
+#  Ini yang dipakai setelah deploy, BUKAN `systemctl restart`. Restart memutus
+#  request yang sedang berjalan — termasuk penyelesaian order yang sedang
+#  memindahkan uang, di tengah transaksi database.
+ExecReload=/usr/bin/php artisan octane:reload
+
+Restart=always
+RestartSec=3
+
+# ------------------------------------------------------------------------------
+#  Pengerasan
+# ------------------------------------------------------------------------------
+#  Tidak ada yang eksotis di sini; semuanya bawaan systemd yang mengurangi
+#  akibat kalau prosesnya berhasil dieksploitasi.
+#
+#  `ReadWritePaths` menyebut storage/ dan bootstrap/cache SAJA. Selebihnya
+#  read-only, termasuk direktori kode — jadi proses ini tidak bisa menulis PHP
+#  baru ke dirinya sendiri, yang merupakan langkah kedua hampir setiap RCE.
+ProtectSystem=full
+ProtectHome=true
+NoNewPrivileges=true
+PrivateTmp=true
+ReadWritePaths=/var/www/antaride-be/storage /var/www/antaride-be/bootstrap/cache
+
+# Batas berkas terbuka. Octane memegang koneksi database dan Redis per worker,
+# ditambah socket masuk. Bawaan 1024 habis pada beban sedang, dan gejalanya
+# "Too many open files" yang muncul acak di endpoint mana pun.
+LimitNOFILE=65535
+
+[Install]
+WantedBy=multi-user.target

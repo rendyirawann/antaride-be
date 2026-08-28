@@ -1,0 +1,23 @@
+[Unit]
+Description=Jalankan scheduler Antaride setiap menit
+
+[Timer]
+# `OnCalendar=*:0/1` = setiap menit, pada detik ke-0.
+OnCalendar=*:0/1
+
+# Menjalankan yang terlewat setelah server sempat mati.
+#
+# Yang diselamatkan: agregasi metrik harian. Server yang mati saat jadwalnya
+# tiba akan kehilangan satu hari data di `metrics_daily` — dan grafik yang
+# bolong satu hari terbaca sebagai "tidak ada order hari itu", bukan sebagai
+# job yang terlewat.
+Persistent=true
+
+# Jitter 0 detik: scheduler Laravel sendiri yang menentukan tugas mana yang
+# jalan menit ini. Menggeser waktunya membuat tugas yang dijadwalkan pada menit
+# tertentu bisa terlewat sepenuhnya.
+AccuracySec=1s
+RandomizedDelaySec=0
+
+[Install]
+WantedBy=timers.target

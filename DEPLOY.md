@@ -1,0 +1,526 @@
+# Deploy Antaride Backend
+
+Panduan ini menargetkan **satu VPS Ubuntu 22.04/24.04**, aplikasi di
+**subfolder** `https://domain-anda.id/antaride/`, dan tetap bisa dijalankan di
+lokal `http://127.0.0.1:8000/` **tanpa mengubah satu baris kode**.
+
+Berkas pendukungnya ada di [deploy/](deploy/):
+
+```
+deploy/
+├── env.production.example        # .env produksi, dengan penjelasan tiap nilai
+├── nginx/
+│   ├── antaride-subfolder.conf   # domain.com/antaride/   ← panduan ini
+│   └── antaride-subdomain.conf   # api.domain.com/        ← lebih disarankan
+├── apache/
+│   └── antaride-subfolder.conf   # kalau server sudah pakai Apache
+├── systemd/
+│   ├── antaride-octane.service
+│   ├── antaride-queue@.service   # unit template: @matching, @payments, @default
+│   ├── antaride-queues.target
+│   ├── antaride-scheduler.service
+│   ├── antaride-scheduler.timer
+│   ├── antaride-location.service
+│   └── redis-override.conf
+└── redis/
+    └── antaride.conf
+```
+
+---
+
+## Yang paling penting di seluruh dokumen ini
+
+**Subfolder-nya hilang kalau satu hal terlewat.**
+
+Octane mendengarkan di `127.0.0.1:8000` dan melayani dari **akar**. Nginx yang
+memotong `/antaride` sebelum meneruskan — jadi Laravel melihat `/admin/login`,
+bukan `/antaride/admin/login`.
+
+Akibatnya kalau tidak ditangani: setiap `route()`, `url()`, dan `asset()`
+menghasilkan tautan **tanpa** subfolder. Halaman pertamanya terbuka — Anda
+mengetik URL-nya sendiri — lalu setiap link di dalamnya 404. Termasuk form login,
+yang `action`-nya menunjuk ke luar subfolder.
+
+Yang menyelesaikannya **satu header**, dan dia butuh dua sisi:
+
+| Sisi | Yang harus ada |
+|---|---|
+| Nginx | `proxy_set_header X-Forwarded-Prefix /antaride;` |
+| Laravel | `Request::HEADER_X_FORWARDED_PREFIX` di `trustProxies` — sudah ada di `bootstrap/app.php` |
+
+Baris Laravel-nya **bukan bawaan framework**. Laravel tidak memasukkan
+`X-Forwarded-Prefix` ke daftar header proxy bawaannya, jadi itu tambahan manual —
+dan tambahan manual yang tidak diuji akan hilang pada merge berikutnya.
+
+Karena itu ada `tests/Feature/Http/SubfolderDeploymentTest.php` (9 test). Jalankan
+setelah setiap perubahan pada `bootstrap/app.php`:
+
+```bash
+php artisan test tests/Feature/Http/SubfolderDeploymentTest.php
+```
+
+**Kegagalannya tidak terlihat di lokal sama sekali.** Di lokal tidak ada proxy dan
+tidak ada subfolder; seluruh test lain lulus. Yang pertama menemukannya adalah
+orang yang membuka panel admin di server — dan yang dia lihat 404, bukan pesan
+yang menyebut header apa pun.
+
+---
+
+## Pertimbangkan subdomain sebelum melanjutkan
+
+Subfolder bekerja, dan panduan ini membuatnya bekerja. Tapi kalau Anda bisa
+memilih, **subdomain lebih sederhana**:
+
+|  | Subfolder | Subdomain |
+|---|---|---|
+| `X-Forwarded-Prefix` | wajib, dan satu-satunya penjaganya adalah test | tidak perlu |
+| `rewrite` di Nginx | wajib | tidak perlu |
+| Symlink untuk aset statis | wajib | tidak perlu |
+| `SESSION_PATH` | harus subfolder, kalau tidak cookie tabrakan dengan aplikasi lain | `/` |
+| Lapisan khusus admin (allowlist IP di Nginx, basic auth staging) | satu server block untuk semuanya | bisa dipisah |
+
+Kalau memilih subdomain: pakai `deploy/nginx/antaride-subdomain.conf`, dan di
+`.env` set `APP_URL=https://api.domain-anda.id` tanpa subfolder,
+`SESSION_PATH=/`. Sisa panduan ini tetap berlaku.
+
+---
+
+## 1. Paket sistem
+
+```bash
+sudo apt update
+sudo apt install -y \
+    nginx \
+    postgresql postgresql-contrib \
+    redis-server \
+    php8.3-cli php8.3-fpm php8.3-pgsql php8.3-redis php8.3-mbstring \
+    php8.3-xml php8.3-curl php8.3-zip php8.3-bcmath php8.3-intl php8.3-gd \
+    git unzip curl
+```
+
+**`php8.3-gd` tidak opsional.** Validasi `image` dan `dimensions` pada unggahan
+dokumen memanggil `getimagesize()`. Tanpa GD, setiap unggahan dokumen driver
+ditolak dengan galat validasi yang tidak menyebut GD — dan tidak ada satu pun
+driver yang bisa mendaftar.
+
+**`php8.3-redis` juga tidak opsional di produksi.** `.env` produksi memakai
+`REDIS_CLIENT=phpredis`; tanpa ekstensinya aplikasi gagal boot.
+
+Composer:
+
+```bash
+curl -sS https://getcomposer.org/installer | php
+sudo mv composer.phar /usr/local/bin/composer
+```
+
+Go (untuk layanan lokasi):
+
+```bash
+sudo apt install -y golang-go
+go version   # minimal 1.22
+```
+
+---
+
+## 2. PostgreSQL
+
+```bash
+sudo -u postgres createuser --pwprompt antaride
+sudo -u postgres createdb --owner=antaride antaride
+```
+
+**Jangan memakai user `postgres` untuk aplikasi.** Superuser bisa `DROP
+DATABASE`, membaca seluruh database lain di instance yang sama, dan menjalankan
+`COPY FROM PROGRAM` — yang berarti eksekusi perintah shell. Satu SQL injection
+pada koneksi superuser adalah seluruh server.
+
+Ekstensi yang dibutuhkan (jalankan sebagai `postgres`, bukan sebagai `antaride` —
+membuat ekstensi menuntut superuser):
+
+```bash
+sudo -u postgres psql -d antaride -c 'CREATE EXTENSION IF NOT EXISTS pg_trgm;'
+sudo -u postgres psql -d antaride -c 'CREATE EXTENSION IF NOT EXISTS postgis;'
+```
+
+PostGIS butuh paketnya lebih dulu:
+
+```bash
+sudo apt install -y postgresql-16-postgis-3
+```
+
+Kalau PostGIS tidak dipasang, set `GEO_ZONE_DRIVER=native` di `.env`. Salah di
+sini **tidak** menghasilkan galat saat boot — `php artisan antaride:health` yang
+menandainya GAGAL.
+
+---
+
+## 3. Redis
+
+```bash
+sudo cp deploy/redis/antaride.conf /etc/redis/redis-antaride.conf
+sudo chown redis:redis /etc/redis/redis-antaride.conf
+sudo chmod 640 /etc/redis/redis-antaride.conf
+```
+
+Ganti `requirepass` di berkas itu dengan hasil `openssl rand -hex 32`, lalu
+tambahkan di **akhir** `/etc/redis/redis.conf`:
+
+```
+include /etc/redis/redis-antaride.conf
+```
+
+Baris `include` harus di akhir: Redis memakai nilai **terakhir** untuk direktif
+yang muncul dua kali. Include di awal berarti seluruh isinya ditimpa.
+
+Override systemd:
+
+```bash
+sudo mkdir -p /etc/systemd/system/redis-server.service.d
+sudo cp deploy/systemd/redis-override.conf \
+    /etc/systemd/system/redis-server.service.d/antaride.conf
+sudo systemctl daemon-reload
+sudo systemctl restart redis-server
+```
+
+Periksa yang paling mudah salah:
+
+```bash
+redis-cli -a 'PASSWORD' CONFIG GET maxmemory-policy
+# harus: volatile-lru
+```
+
+**`allkeys-lru` salah untuk Antaride**, walaupun itu yang paling sering
+disarankan. Redis di sini bukan hanya cache — dia memuat posisi driver, quote,
+lock order, dan **antrean job**. `allkeys-lru` membuang kunci apa pun saat memori
+penuh, termasuk antrean job berisi pembukuan dompet, dan tidak ada satu pun galat
+yang muncul. Penjelasan lengkapnya di `deploy/redis/antaride.conf`.
+
+Catat versi Redis-nya:
+
+```bash
+redis-cli -a 'PASSWORD' INFO server | grep redis_version
+```
+
+Redis 6.2+ → `REDIS_GEO_COMMAND=geosearch`. Redis 5/6.0 → `georadius`. Salah di
+sini membuat **pencocokan driver** gagal: order masuk lalu langsung `no_driver`.
+
+---
+
+## 4. Kode
+
+```bash
+sudo mkdir -p /var/www
+sudo chown www-data:www-data /var/www
+sudo -u www-data git clone https://github.com/rendyirawann/antaride-be.git \
+    /var/www/antaride-be
+cd /var/www/antaride-be
+
+sudo -u www-data composer install --no-dev --optimize-autoloader
+```
+
+`--no-dev` bukan sekadar penghematan: paket dev memuat Ignition, yang menampilkan
+halaman galat berisi seluruh isi `.env`.
+
+**Tidak ada langkah `npm run build`, dan itu disengaja.** Panel admin memakai aset
+Metronic yang sudah jadi di `public/assets` — bukan hasil bundling. Tidak ada satu
+pun Blade yang memanggil `@vite`.
+
+Toolchain Vite tetap ada di repo untuk saat dibutuhkan. Kalau nanti ada Blade yang
+memakai `@vite`, tambahkan langkah ini ke bagian deploy ulang juga:
+
+```bash
+sudo -u www-data npm ci && sudo -u www-data npm run build
+```
+
+`/public/build` di-gitignore, jadi tanpa langkah itu `@vite` akan melempar
+"Unable to locate file in Vite manifest" — halaman 500, bukan halaman tanpa gaya.
+
+RoadRunner (binernya **tidak** ikut di repo — 61 MB, dan biner Windows tidak bisa
+dijalankan di Linux):
+
+```bash
+sudo -u www-data ./vendor/bin/rr get-binary
+sudo -u www-data chmod +x rr
+```
+
+### `.env`
+
+```bash
+sudo -u www-data cp deploy/env.production.example .env
+sudo -u www-data php artisan key:generate
+sudo chmod 600 .env
+```
+
+Lalu isi seluruh yang bertanda `GANTI`. Yang paling menentukan:
+
+| Kunci | Kenapa |
+|---|---|
+| `APP_URL=https://domain-anda.id/antaride` | Menentukan URL bertanda tangan dokumen KYC dan callback payment gateway. Subfolder yang hilang di sini membuat pratinjau dokumen 404 dan callback pembayaran tidak pernah sampai. Tanpa garis miring di akhir. |
+| `TRUSTED_PROXIES=127.0.0.1,::1` | Tanpa ini, `X-Forwarded-Prefix` diabaikan dan subfolder hilang. **Jangan** diganti `*`. |
+| `SESSION_PATH=/antaride` | Cookie dengan path `/` tabrakan dengan aplikasi Laravel lain di domain yang sama; gejalanya staf yang keluar sendiri saat berpindah aplikasi. |
+| `APP_DEBUG=false` | `true` menampilkan seluruh isi `.env` — termasuk `APP_KEY` — kepada siapa pun yang memicu galat 500. |
+| `LOCATION_SERVICE_SECRET` | Harus **sama** dengan `ANTARIDE_LOCATION_SECRET` di layanan Go. Beda = setiap ping GPS ditolak 401, tanpa galat di mana pun. Nama kuncinya `_SECRET`, bukan `_TOKEN`. |
+| `OCTANE_HTTPS=true` | Nginx yang memegang TLS; tanpa ini URL yang dihasilkan di dalam worker berskema `http://`. |
+
+### Migrasi dan seed
+
+```bash
+sudo -u www-data php artisan migrate --force
+sudo -u www-data php artisan db:seed --class=SystemSeeder --force
+sudo -u www-data php artisan db:seed --class=CatalogSeeder --force
+```
+
+`--force` wajib di `APP_ENV=production` — Laravel menolak menjalankan migrasi
+tanpa konfirmasi di sana, dan tidak ada TTY untuk mengonfirmasinya.
+
+### Izin
+
+```bash
+sudo chown -R www-data:www-data storage bootstrap/cache
+sudo chmod -R 775 storage bootstrap/cache
+```
+
+**Jangan** `chmod 777`. Itu memberi izin tulis kepada setiap pengguna di server,
+termasuk proses lain yang mungkin sudah ditembus.
+
+### Cache
+
+```bash
+sudo -u www-data php artisan config:cache
+sudo -u www-data php artisan route:cache
+sudo -u www-data php artisan view:cache
+sudo -u www-data php artisan event:cache
+```
+
+`config:cache` membuat `env()` **berhenti bekerja** di luar berkas config. Itu
+perilaku Laravel yang disengaja, dan kode di repo ini sudah memakai `config()` di
+mana-mana — tapi kalau nanti ada `env()` yang menyelip di controller, dia akan
+mengembalikan null di produksi dan tetap benar di lokal.
+
+### Symlink untuk subfolder
+
+```bash
+sudo ln -s /var/www/antaride-be/public /var/www/html/antaride
+```
+
+Ini yang membuat Nginx bisa melayani 1.677 berkas aset Metronic langsung, tanpa
+`alias` — kombinasi `alias` + `try_files` punya sejarah panjang menghasilkan path
+yang salah, dan salahnya senyap: 404 pada berkas yang ada.
+
+Disk publik Laravel:
+
+```bash
+sudo -u www-data php artisan storage:link
+```
+
+---
+
+## 5. Nginx
+
+```bash
+sudo cp deploy/nginx/antaride-subfolder.conf /etc/nginx/sites-available/antaride
+sudo nano /etc/nginx/sites-available/antaride     # ganti domain & subfolder
+sudo ln -s /etc/nginx/sites-available/antaride /etc/nginx/sites-enabled/
+sudo nginx -t && sudo systemctl reload nginx
+```
+
+Sertifikat:
+
+```bash
+sudo apt install -y certbot python3-certbot-nginx
+sudo certbot --nginx -d domain-anda.id
+```
+
+---
+
+## 6. systemd
+
+```bash
+sudo cp deploy/systemd/*.service deploy/systemd/*.timer deploy/systemd/*.target \
+    /etc/systemd/system/
+sudo systemctl daemon-reload
+
+sudo systemctl enable --now antaride-octane
+sudo systemctl enable --now antaride-queue@matching
+sudo systemctl enable --now antaride-queue@payments
+sudo systemctl enable --now antaride-queue@default
+sudo systemctl enable --now antaride-scheduler.timer
+sudo systemctl enable antaride-queues.target
+```
+
+**Tiga worker queue terpisah, bukan satu.** Job pencocokan driver punya batas
+waktu yang nyata — penumpang menunggu, dan tawaran hanya berlaku 15 detik. Satu
+worker untuk semuanya berarti satu retry webhook payment gateway yang timeout 30
+detik menahan seluruh antrean pencocokan di belakangnya. Yang dilihat penumpang:
+"mencari driver" yang tidak pernah selesai, padahal drivernya ada.
+
+### Layanan lokasi (Go)
+
+```bash
+sudo useradd --system --no-create-home --shell /usr/sbin/nologin antaride-loc
+cd /var/www/antaride-be/services/location-service
+sudo go build -o /usr/local/bin/antaride-location .
+
+sudo mkdir -p /etc/antaride
+sudo install -m 0600 -o root -g root /dev/null /etc/antaride/location.env
+sudo tee /etc/antaride/location.env >/dev/null <<'EOF'
+ANTARIDE_LOCATION_ADDR=127.0.0.1:8200
+ANTARIDE_LOCATION_SECRET=<sama dengan LOCATION_SERVICE_SECRET di .env>
+ANTARIDE_REDIS_ADDR=127.0.0.1:6379
+ANTARIDE_REDIS_PASSWORD=<sama dengan REDIS_PASSWORD di .env>
+ANTARIDE_REDIS_DB=0
+EOF
+
+sudo systemctl enable --now antaride-location
+```
+
+Rahasianya disimpan di berkas terpisah ber-permission 0600, **bukan** di unit
+systemd: unit systemd bisa dibaca semua pengguna lewat `systemctl cat`.
+
+Layanan ini harus bisa dijangkau dari internet karena aplikasi driver
+mengirim ping langsung ke sana. Tambahkan server block Nginx sendiri untuk
+`loc.domain-anda.id` yang memproksi ke `127.0.0.1:8200`, dan set
+`LOCATION_SERVICE_URL` ke domain itu.
+
+---
+
+## 7. Verifikasi
+
+Jalankan berurutan. Setiap langkah punya kegagalan yang khas.
+
+```bash
+sudo -u www-data php artisan antaride:health
+```
+
+Memeriksa Postgres, Redis, perintah GEO, prefix Redis, OSRM, dan Centrifugo
+sekaligus.
+
+```bash
+curl -sS -o /dev/null -w '%{http_code}\n' https://domain-anda.id/antaride/up
+# harus: 200
+```
+
+**Subfolder benar-benar ikut di URL yang dihasilkan** — ini yang paling penting:
+
+```bash
+curl -sS https://domain-anda.id/antaride/admin/login | grep -o 'action="[^"]*"'
+# harus memuat /antaride/ di dalamnya
+```
+
+Kalau `action` tidak memuat `/antaride/`, berarti `X-Forwarded-Prefix` tidak
+sampai. Periksa dua hal: baris `proxy_set_header X-Forwarded-Prefix` di Nginx, dan
+`TRUSTED_PROXIES` di `.env`.
+
+**Aset Metronic dilayani Nginx, bukan Octane:**
+
+```bash
+curl -sS -o /dev/null -w '%{http_code} %{content_type}\n' \
+    https://domain-anda.id/antaride/assets/css/style.bundle.css
+# harus: 200 text/css
+```
+
+**IP asli pengguna terbaca:**
+
+```bash
+sudo -u www-data php artisan tinker --execute="echo request()->ip();"
+```
+
+Di CLI ini akan menampilkan `127.0.0.1` — yang benar. Yang perlu diperiksa dari
+sisi HTTP: coba login admin dari IP yang salah dan pastikan
+`admin_login_attempts` mencatat IP Anda, bukan `127.0.0.1`. Kalau tercatat
+`127.0.0.1`, **rate limit OTP menjadi rate limit global** — satu orang yang
+meminta OTP berulang memblokir seluruh pengguna.
+
+```bash
+systemctl status antaride-octane antaride-location
+systemctl list-timers antaride-scheduler
+journalctl -u antaride-octane -n 50 --no-pager
+```
+
+**Jadwal disetel Asia/Jakarta, `schedule:list` menampilkannya UTC.** `18:30` di
+daftar berarti 01:30 WIB. Perbedaan tujuh jam ini yang paling sering
+disalahpahami saat memeriksa apakah jadwalnya benar.
+
+---
+
+## 8. Deploy ulang
+
+```bash
+cd /var/www/antaride-be
+
+sudo -u www-data php artisan down --render="errors::503"
+
+sudo -u www-data git pull
+sudo -u www-data composer install --no-dev --optimize-autoloader
+sudo -u www-data php artisan migrate --force
+
+sudo -u www-data php artisan config:cache
+sudo -u www-data php artisan route:cache
+sudo -u www-data php artisan view:cache
+sudo -u www-data php artisan event:cache
+
+sudo systemctl reload antaride-octane
+sudo systemctl restart antaride-queues.target
+
+sudo -u www-data php artisan up
+```
+
+**`reload`, bukan `restart`, untuk Octane.** `octane:reload` memberi worker
+kesempatan menyelesaikan request yang sedang berjalan sebelum diganti. `restart`
+memutusnya — termasuk penyelesaian order yang sedang memindahkan uang, di tengah
+transaksi database.
+
+**Worker queue harus `restart`, bukan reload.** Worker memegang kode yang di-load
+saat dia start; setelah deploy, worker lama tetap menjalankan kode lama. Job yang
+gagal karenanya tidak menyebut penyebabnya. `antaride-queues.target` yang membuat
+ketiganya ikut, supaya tidak ada yang terlupa.
+
+---
+
+## 9. Setelah panel siap: isi metrik
+
+Dashboard backoffice membaca `metrics_daily`. Tanpa agregasi, grafik trennya
+menampilkan **nol untuk setiap hari** — dan grafik datar itu terbaca sebagai
+"tidak ada order", bukan sebagai job yang belum jalan.
+
+```bash
+sudo -u www-data php artisan antaride:aggregate-metrics --days=30
+```
+
+---
+
+## 10. Arahkan aplikasi Flutter ke server
+
+Di repo `antaride-fe`:
+
+```bash
+export ANTARIDE_API_URL="https://domain-anda.id/antaride/api/v1"
+melos run apk:all
+```
+
+`ANTARIDE_API_URL` **harus memuat subfolder**, dan berakhir di `/api/v1`.
+
+Garis miring di akhir **aman** — Dio meruntuhkan garis miring ganda, jadi
+`.../api/v1/` + `/driver/status` tetap menghasilkan satu garis miring. Itu
+diverifikasi, bukan diasumsikan: lihat
+`packages/antaride_api/test/base_url_test.dart` di repo `antaride-fe` (6 test),
+yang menyatakan perilaku penggabungan URL yang kita andalkan — termasuk untuk
+unggahan multipart, yang memakai jalur `Options` tersendiri.
+
+Yang **tidak** aman: menghilangkan subfolder-nya. Server menjawab 404 HTML,
+`ApiClient` menguraikannya sebagai response yang bukan JSON, dan yang muncul di
+layar adalah "Terjadi gangguan. Coba lagi." pada **setiap** layar — tanpa satu
+pun petunjuk bahwa masalahnya alamat.
+
+---
+
+## Yang belum dicakup panduan ini
+
+| Hal | Keadaan |
+|---|---|
+| **OSRM** | Wajib ada — tanpa jarak tidak ada harga. Butuh data OSM Indonesia dan RAM yang cukup untuk pra-prosesnya; pemasangannya berdiri sendiri. |
+| **Centrifugo** | Belum terpasang. Aplikasi jatuh ke penarikan berkala, yang bekerja tapi menunda pembaruan status beberapa detik. |
+| **Backup** | Belum ada. Yang paling penting: `pg_dump` harian, dan `storage/app/private/kyc` — dokumen identitas tidak bisa dibuat ulang. |
+| **Log rotation** | `LOG_STACK=daily` + `LOG_DAILY_DAYS=14` menangani log Laravel. Log Nginx ditangani logrotate bawaan paket. |
+| **Aset Metronic di repo publik** | Metronic template berbayar, dan repo ini publik — lisensinya melarang redistribusi source-nya. Keputusan sadar; kalau berubah pikiran, `gh repo edit rendyirawann/antaride-be --visibility private`. |
+| **Firewall** | Belum disetel. Yang harus tertutup dari internet: 5432 (Postgres), 6379 (Redis), 8000 (Octane), 8200 (layanan lokasi, kalau diproksi Nginx). |

@@ -1,0 +1,90 @@
+# ==============================================================================
+#  Antaride — worker queue
+# ==============================================================================
+#  UNIT TEMPLATE. Yang setelah `@` menjadi nama antreannya.
+#
+#      sudo cp antaride-queue@.service /etc/systemd/system/
+#      sudo systemctl daemon-reload
+#      sudo systemctl enable --now antaride-queue@matching
+#      sudo systemctl enable --now antaride-queue@payments
+#      sudo systemctl enable --now antaride-queue@default
+#
+#  Lihat:  journalctl -u 'antaride-queue@*' -f
+# ==============================================================================
+#
+#  KENAPA TIGA WORKER TERPISAH, BUKAN SATU YANG MENANGANI SEMUA
+#  ---------------------------------------------------------------------------
+#  Job pencocokan driver punya batas waktu yang nyata: penumpang menunggu, dan
+#  tawaran hanya berlaku 15 detik. Job pembukuan dompet dan pengiriman notifikasi
+#  tidak.
+#
+#  Satu worker untuk semuanya berarti satu job lambat — retry webhook payment
+#  gateway yang timeout 30 detik — menahan seluruh antrean pencocokan di
+#  belakangnya. Yang dilihat penumpang: "mencari driver" yang tidak pernah
+#  selesai, padahal drivernya ada.
+#
+#  KENAPA BUKAN HORIZON
+#  ---------------------------------------------------------------------------
+#  Horizon butuh `ext-pcntl`, yang tidak ada di Windows tempat proyek ini
+#  dikembangkan. Memakai Horizon di produksi dan `queue:work` di lokal berarti
+#  dua perilaku antrean yang berbeda — dan yang berbeda tidak akan pernah diuji.
+#
+#  Kalau nanti Horizon dipakai, dia MENGGANTI ketiga unit ini, bukan
+#  ditambahkan. Dua penjadwal yang mengambil dari antrean yang sama akan
+#  menjalankan job yang sama dua kali.
+# ==============================================================================
+
+[Unit]
+Description=Antaride queue worker (%i)
+After=network-online.target redis-server.service postgresql.service
+Requires=redis-server.service
+PartOf=antaride-queues.target
+
+[Service]
+Type=simple
+User=www-data
+Group=www-data
+WorkingDirectory=/var/www/antaride-be
+
+# ------------------------------------------------------------------------------
+#  `--max-time=3600`: worker berhenti sendiri setiap jam
+# ------------------------------------------------------------------------------
+#  Bukan karena bocor, tapi karena worker memegang kode yang di-load saat dia
+#  start. Setelah deploy, worker lama TETAP menjalankan kode lama sampai
+#  di-restart — dan job yang gagal karena kode lama tidak akan menyebut
+#  penyebabnya.
+#
+#  `systemctl restart` dijalankan setelah deploy; `--max-time` yang menangkap
+#  kalau langkah itu terlewat.
+#
+#  `--tries=3 --backoff=10,30,60`: percobaan ulang menjauh. Job yang gagal karena
+#  layanan luar sedang down akan berhasil pada percobaan ketiga; job yang dicoba
+#  ulang tiga kali dalam tiga detik hanya menambah beban ke layanan yang sudah
+#  bermasalah.
+ExecStart=/usr/bin/php artisan queue:work redis \
+    --queue=%i \
+    --sleep=1 \
+    --tries=3 \
+    --backoff=10,30,60 \
+    --max-time=3600 \
+    --max-jobs=1000
+
+# `SIGTERM` memberi worker kesempatan menyelesaikan job yang sedang jalan.
+#
+# 70 detik, lebih panjang daripada job terlama yang wajar. Timeout yang lebih
+# pendek daripada durasi job berarti systemd membunuhnya di tengah — dan job
+# yang mati di tengah pembukuan dompet meninggalkan transaksi setengah jalan.
+KillSignal=SIGTERM
+TimeoutStopSec=70
+
+Restart=always
+RestartSec=3
+
+ProtectSystem=full
+ProtectHome=true
+NoNewPrivileges=true
+PrivateTmp=true
+ReadWritePaths=/var/www/antaride-be/storage /var/www/antaride-be/bootstrap/cache
+
+[Install]
+WantedBy=multi-user.target

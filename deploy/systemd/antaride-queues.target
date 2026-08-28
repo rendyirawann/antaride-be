@@ -1,0 +1,21 @@
+# ==============================================================================
+#  Target untuk menghentikan/menjalankan SELURUH worker queue sekaligus
+# ==============================================================================
+#      sudo cp antaride-queues.target /etc/systemd/system/
+#      sudo systemctl daemon-reload
+#      sudo systemctl enable antaride-queues.target
+#
+#  Setelah itu:
+#      sudo systemctl restart antaride-queues.target   # semua worker sekaligus
+#
+#  Kenapa perlu: setelah deploy, SETIAP worker harus di-restart supaya memakai
+#  kode baru. Tanpa target ini, satu worker yang terlupa akan terus menjalankan
+#  kode lama — dan job yang gagal karenanya tidak menyebut penyebabnya.
+# ==============================================================================
+
+[Unit]
+Description=Seluruh worker queue Antaride
+After=network-online.target
+
+[Install]
+WantedBy=multi-user.target

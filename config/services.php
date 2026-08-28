@@ -69,10 +69,20 @@ return [
     |
     */
 
-    'location_service' => [
-        'url' => env('LOCATION_SERVICE_URL', 'http://127.0.0.1:8200'),
-        'token' => env('LOCATION_SERVICE_TOKEN'),
-    ],
+    /*
+     * Konfigurasi layanan lokasi ADA DI `config/antaride.php`, bukan di sini.
+     *
+     * Blok `location_service` di berkas ini pernah ada dan TIDAK PERNAH dibaca
+     * satu pun bagian aplikasi. Dua config untuk hal yang sama tidak sekadar
+     * berlebihan — yang di sini memakai nama kunci env yang BERBEDA
+     * (`LOCATION_SERVICE_TOKEN` alih-alih `LOCATION_SERVICE_SECRET`).
+     *
+     * Yang terjadi kalau dibiarkan: orang yang menyiapkan server membaca berkas
+     * ini, menyetel `LOCATION_SERVICE_TOKEN`, dan nilainya diabaikan. Laravel
+     * jatuh ke penurunan rahasia dari APP_KEY, sementara layanan Go memakai
+     * nilai yang disetel — dan SETIAP ping ditolak 401. Tidak ada galat di
+     * aplikasi driver; yang terlihat hanya driver online tanpa satu pun order.
+     */
 
     /*
     |--------------------------------------------------------------------------

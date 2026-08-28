@@ -88,6 +88,82 @@ return Application::configure(basePath: dirname(__DIR__))
 
         /*
         |----------------------------------------------------------------------
+        | Proxy tepercaya — INI YANG MENJAGA SUBFOLDER TIDAK HILANG
+        |----------------------------------------------------------------------
+        |
+        | Di produksi aplikasi ini berjalan di belakang Nginx, dan bisa berada di
+        | SUBFOLDER: `https://domain.com/antaride/`. Octane sendiri mendengarkan
+        | di `127.0.0.1:8000` tanpa tahu apa pun soal subfolder itu.
+        |
+        | Yang terjadi tanpa konfigurasi ini, dan ketiganya senyap:
+        |
+        |   SUBFOLDER HILANG
+        |     Nginx meneruskan `/antaride/admin/login` sebagai `/admin/login`.
+        |     Laravel melihat path tanpa prefix, jadi `route('admin.login')`
+        |     menghasilkan `/admin/login` — tanpa subfolder. Setiap link, setiap
+        |     redirect, setiap `asset()` menunjuk ke luar subfolder, dan yang
+        |     ditemukan pengguna adalah 404 dari web server.
+        |
+        |     Yang menyelesaikannya `X-Forwarded-Prefix`. Nginx mengirimkannya,
+        |     dan Symfony memakainya sebagai base URL — PER REQUEST, jadi aman
+        |     untuk worker Octane yang hidup lama. `URL::forceRootUrl()` juga
+        |     bekerja, tapi dia state global: satu request yang menyetelnya akan
+        |     mempengaruhi request berikutnya di worker yang sama.
+        |
+        |   HTTPS TERBACA SEBAGAI HTTP
+        |     Nginx yang memegang TLS; ke Octane dia bicara HTTP biasa. Tanpa
+        |     `X-Forwarded-Proto`, `url()` menghasilkan `http://` di server yang
+        |     HTTPS. Browser modern memblokir sebagian isinya sebagai mixed
+        |     content, dan yang paling terlihat: form login yang tidak bisa
+        |     dikirim.
+        |
+        |   SETIAP PENGGUNA BER-IP 127.0.0.1
+        |     Rate limit OTP, allowlist IP admin, dan `admin_login_attempts`
+        |     semuanya membaca `$request->ip()`. Tanpa `X-Forwarded-For`,
+        |     semuanya melihat IP Nginx. Akibatnya: rate limit OTP menjadi rate
+        |     limit GLOBAL — satu orang yang meminta OTP berulang memblokir
+        |     SELURUH pengguna, dan allowlist IP admin memblokir semua orang atau
+        |     tidak memblokir siapa pun.
+        |
+        |----------------------------------------------------------------------
+        | KENAPA BUKAN `at: '*'`
+        |----------------------------------------------------------------------
+        |
+        | Header di atas semuanya BISA DIPALSUKAN client. Mempercayai proxy mana
+        | pun berarti siapa saja bisa:
+        |
+        |   * mengirim `X-Forwarded-For` palsu untuk melewati rate limit dan
+        |     allowlist IP admin,
+        |   * mengirim `X-Forwarded-Host` palsu sehingga tautan reset password
+        |     yang dikirim ke email korban menunjuk ke domain penyerang.
+        |
+        | Nginx berada di host yang SAMA dengan Octane, jadi bawaannya
+        | `127.0.0.1,::1` — dan hanya itu. Kalau nanti ada load balancer atau
+        | Cloudflare di depannya, IP-nya ditambahkan lewat `TRUSTED_PROXIES` di
+        | `.env`, bukan diganti `*`.
+        |
+        */
+        $middleware->trustProxies(
+            at: array_filter(array_map(
+                'trim',
+                explode(',', (string) env('TRUSTED_PROXIES', '127.0.0.1,::1')),
+            )),
+
+            headers: Request::HEADER_X_FORWARDED_FOR
+                | Request::HEADER_X_FORWARDED_HOST
+                | Request::HEADER_X_FORWARDED_PORT
+                | Request::HEADER_X_FORWARDED_PROTO
+
+                /*
+                 * Yang TIDAK ada di bawaan Laravel, dan yang paling penting di
+                 * sini. Tanpa baris ini seluruh URL kehilangan subfolder-nya —
+                 * lihat penjelasan di atas.
+                 */
+                | Request::HEADER_X_FORWARDED_PREFIX,
+        );
+
+        /*
+        |----------------------------------------------------------------------
         | Grup 'admin'
         |----------------------------------------------------------------------
         |
