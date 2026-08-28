@@ -1,0 +1,57 @@
+*.log
+.DS_Store
+.env
+.env.backup
+.env.production
+.phpactor.json
+.phpunit.result.cache
+/.codex
+/.cursor/
+/.idea
+/.nova
+/.phpunit.cache
+/.vscode
+/.zed
+/auth.json
+/node_modules
+/public/build
+/public/fonts-manifest.dev.json
+/public/hot
+/public/storage
+/storage/*.key
+/storage/pail
+/vendor
+_ide_helper.php
+Homestead.json
+Homestead.yaml
+Thumbs.db
+rr
+.rr.yaml
+
+# ==============================================================================
+#  BINARY YANG TIDAK BOLEH MASUK GIT
+# ==============================================================================
+#  `rr.exe` (RoadRunner Windows) berukuran 61 MB. GitHub memperingatkan di atas
+#  50 MB dan MENOLAK di atas 100 MB — dan yang lebih penting: berkas biner di git
+#  tidak bisa di-diff, jadi setiap versinya tersimpan utuh. Riwayat repo akan
+#  tumbuh puluhan megabyte setiap kali RoadRunner diperbarui, dan itu TIDAK bisa
+#  dihapus tanpa menulis ulang seluruh riwayat.
+#
+#  Cara mendapatkannya kembali: `vendor/bin/rr get-binary` (Windows), atau
+#  `php artisan octane:install --server=roadrunner`.
+#
+#  `location-service.exe` hasil `go build` — dibangun ulang di server, bukan
+#  dikirim. Binary Windows juga tidak bisa dijalankan di server Linux.
+# ==============================================================================
+/rr.exe
+/rr
+/services/location-service/location-service
+/services/location-service/*.exe
+*.exe~
+
+# Hasil build Vite untuk aset Metronic.
+#
+# Dibangun di server dengan `npm ci && npm run build`. Meng-commit hasil build
+# berarti setiap perubahan CSS menghasilkan diff pada berkas yang di-hash — dan
+# konflik merge pada berkas yang tidak bisa dibaca manusia.
+/public/build

@@ -1,0 +1,55 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<phpunit xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:noNamespaceSchemaLocation="vendor/phpunit/phpunit/phpunit.xsd"
+         bootstrap="vendor/autoload.php"
+         colors="true"
+>
+    <testsuites>
+        <testsuite name="Unit">
+            <directory>tests/Unit</directory>
+        </testsuite>
+        <testsuite name="Feature">
+            <directory>tests/Feature</directory>
+        </testsuite>
+    </testsuites>
+    <source>
+        <include>
+            <directory>app</directory>
+        </include>
+    </source>
+    <php>
+        <env name="APP_ENV" value="testing"/>
+        <env name="APP_MAINTENANCE_DRIVER" value="file"/>
+        <env name="BCRYPT_ROUNDS" value="4"/>
+        <env name="BROADCAST_CONNECTION" value="null"/>
+        <env name="CACHE_STORE" value="array"/>
+
+        <!--
+            Test jalan di PostgreSQL, BUKAN SQLite in-memory.
+
+            Skema ini bergantung pada partial unique index, exclusion
+            constraint, JSONB, GIN, PostGIS, dan constraint trigger yang
+            deferrable. Tidak satu pun ada di SQLite.
+
+            Test yang lulus di SQLite tidak membuktikan apa pun tentang
+            produksi, dan yang lebih buruk: test yang seharusnya membuktikan
+            "driver tidak bisa memegang dua order" akan LULUS di SQLite justru
+            karena constraint-nya tidak ada di sana.
+
+            Database antaride_testing dibuat oleh: php artisan antaride:setup-test-db
+        -->
+        <env name="DB_CONNECTION" value="pgsql_testing"/>
+        <env name="DB_URL" value=""/>
+
+        <!-- PostGIS tersedia, jadi resolver zona diuji pada jalur produksinya. -->
+        <env name="GEO_ZONE_DRIVER" value="postgis"/>
+        <env name="REDIS_GEO_COMMAND" value="georadius"/>
+
+        <env name="MAIL_MAILER" value="array"/>
+        <env name="QUEUE_CONNECTION" value="sync"/>
+        <env name="SESSION_DRIVER" value="array"/>
+        <env name="PULSE_ENABLED" value="false"/>
+        <env name="TELESCOPE_ENABLED" value="false"/>
+        <env name="NIGHTWATCH_ENABLED" value="false"/>
+    </php>
+</phpunit>

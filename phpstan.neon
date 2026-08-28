@@ -1,0 +1,39 @@
+includes:
+    - vendor/larastan/larastan/extension.neon
+
+parameters:
+    paths:
+        - app
+        - database/seeders
+        - config
+        - routes
+
+    # Level 6 dipilih sebagai titik awal yang berguna, bukan yang paling ketat.
+    #
+    # Level 9 menuntut anotasi tipe pada setiap array dan mixed, dan pada
+    # codebase Laravel itu menghasilkan ratusan keluhan tentang tipe balikan
+    # framework yang tidak bisa kita ubah. Yang tersaring akhirnya bukan bug,
+    # tapi ketidaklengkapan anotasi.
+    #
+    # Level 6 sudah menangkap yang penting: parameter dan balikan yang tidak
+    # cocok, method dan properti yang tidak ada, tipe null yang tidak ditangani.
+    level: 6
+
+    # Migration dikecualikan karena berisi class anonim `return new class extends
+    # Migration` yang tidak bisa dianalisis dengan berguna, dan Schema builder
+    # bersifat sangat dinamis.
+    excludePaths:
+        - database/migrations
+
+
+    ignoreErrors:
+        # Laravel memakai __get/__set pada model, jadi PHPStan tidak bisa tahu
+        # atribut mana yang sah. Larastan menutup sebagian, tapi kolom yang
+        # tidak ada di $fillable tetap dilaporkan.
+        #
+        # Kesesuaian model dengan kolom database sudah dijaga oleh test
+        # ModelIntegrityTest yang memeriksanya terhadap skema sungguhan, dan itu
+        # pemeriksaan yang lebih kuat daripada analisis statis di sini.
+        -
+            identifier: property.notFound
+            path: app/Domain/*/Models/*.php

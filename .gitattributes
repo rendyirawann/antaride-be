@@ -1,0 +1,56 @@
+# ==============================================================================
+#  NORMALISASI AKHIR BARIS
+# ==============================================================================
+#  Proyek ini dikembangkan di Windows dan dijalankan di Linux. Tanpa berkas ini,
+#  setiap berkas yang disentuh Windows akan muncul sebagai "seluruh baris
+#  berubah" di diff — dan review jadi tidak mungkin.
+#
+#  `text=auto` menormalkan ke LF di dalam repo, dan mengembalikannya sesuai
+#  platform saat checkout.
+# ==============================================================================
+* text=auto
+
+# ------------------------------------------------------------------------------
+#  YANG HARUS TETAP CRLF
+# ------------------------------------------------------------------------------
+#  Batch script Windows MENUNTUT CRLF. Dengan LF, `cmd.exe` membaca label dan
+#  argumen dengan karakter tambahan di ujungnya — dan gejalanya bukan galat
+#  sintaks, tapi `goto` yang tidak menemukan labelnya:
+#
+#      The system cannot find the batch label specified
+#
+#  `dev.bat` adalah satu-satunya cara menjalankan seluruh service di Windows.
+# ------------------------------------------------------------------------------
+*.bat text eol=crlf
+*.cmd text eol=crlf
+
+# Shell script harus LF walaupun di-checkout di Windows — dijalankan di server.
+*.sh text eol=lf
+
+# ------------------------------------------------------------------------------
+#  BINER: JANGAN DISENTUH
+# ------------------------------------------------------------------------------
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.ico binary
+*.woff binary
+*.woff2 binary
+*.ttf binary
+*.eot binary
+*.pdf binary
+*.exe binary
+
+# ------------------------------------------------------------------------------
+#  DISEMBUNYIKAN DARI DIFF DAN DARI STATISTIK BAHASA GITHUB
+# ------------------------------------------------------------------------------
+#  Aset Metronic bukan kode yang kita tulis. Tanpa penanda ini, GitHub akan
+#  menyatakan repo ini "82% JavaScript" — padahal seluruh JavaScript-nya milik
+#  template, dan kode yang sebenarnya PHP.
+#
+#  `linguist-vendored` juga membuatnya tidak muncul di diff pull request, jadi
+#  perubahan pada kode kita tidak tertimbun ribuan baris aset.
+# ------------------------------------------------------------------------------
+public/assets/** linguist-vendored
+docs/openapi/openapi.json linguist-generated
