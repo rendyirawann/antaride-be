@@ -588,6 +588,30 @@ return [
     |
     */
 
+    /*
+    |--------------------------------------------------------------------------
+    | Dokumentasi API (Swagger UI)
+    |--------------------------------------------------------------------------
+    |
+    | Swagger UI di `/api/documentation`, dijaga HTTP Basic auth.
+    |
+    | Yang dijaga BUKAN kerahasiaan API-nya — endpoint tetap bisa ditemukan
+    | dengan mengamati aplikasi. Yang dijaga adalah KEMUDAHANNYA: spesifikasi
+    | OpenAPI memuat seluruh permukaan serangan dalam satu berkas rapi, lengkap
+    | dengan setiap nama field dan setiap aturan validasi. Mengumpulkan itu
+    | sendiri butuh berjam-jam menebak.
+    |
+    | Kredensial KOSONG berarti dokumentasi DITUTUP (404), bukan terbuka. Arah
+    | gagal itu disengaja: `.env` produksi yang lupa memuatnya tidak boleh
+    | menerbitkan seluruh permukaan API tanpa ada yang menyadarinya.
+    |
+    */
+
+    'docs' => [
+        'username' => (string) env('API_DOCS_USERNAME', 'itds'),
+        'password' => (string) env('API_DOCS_PASSWORD', 'itds123'),
+    ],
+
     'storage' => [
         'kyc_disk' => env('KYC_DISK', 'kyc'),
         'export_disk' => env('EXPORT_DISK', 'exports'),

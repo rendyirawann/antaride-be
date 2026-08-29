@@ -2,6 +2,8 @@
 
 declare(strict_types=1);
 
+use App\Http\Controllers\ApiDocsController;
+use App\Http\Middleware\EnsureApiDocsAccess;
 use Illuminate\Support\Facades\Route;
 
 /*
@@ -69,3 +71,40 @@ Route::get('/', function () {
 
     return redirect("/{$prefix}");
 })->name('home');
+
+/*
+|------------------------------------------------------------------------------
+| Dokumentasi API — Swagger UI
+|------------------------------------------------------------------------------
+|
+| `/api/documentation`, dijaga HTTP Basic auth (lihat `antaride.docs`).
+|
+| KENAPA DI SINI, BUKAN DI routes/api_v1.php
+| ------------------------------------------------------------------------------
+| Berkas itu seluruhnya di bawah prefix `api/v1` dan middleware Sanctum. Halaman
+| dokumentasi bukan endpoint API: dia mengembalikan HTML, dan yang membukanya
+| browser tanpa token Sanctum.
+|
+| KENAPA `/api/documentation`, BUKAN `/docs/api` MILIK SCRAMBLE
+| ------------------------------------------------------------------------------
+| Scramble punya tampilannya sendiri di `/docs/api`, tapi dijaga
+| `RestrictedDocsAccess` yang hanya mengizinkan environment lokal — jadi di
+| produksi halaman itu tidak bisa dibuka sama sekali.
+|
+| `/api/documentation` adalah jalur yang lazim dikenal orang dari `l5-swagger`,
+| dan itu yang dicari pengembang aplikasi saat pertama kali membuka proyek ini.
+|
+| Scramble tetap dipakai — sebagai PEMBUAT spesifikasinya, bukan penampilnya.
+|
+*/
+Route::middleware(EnsureApiDocsAccess::class)
+    ->prefix('api/documentation')
+    ->as('docs.')
+    ->group(function (): void {
+        Route::get('/', [ApiDocsController::class, 'index'])->name('index');
+
+        // Dinamai `docs.spec`, dan namanya dipakai Blade lewat `route()`.
+        // Itu yang membuat URL-nya membawa subfolder saat aplikasi di-deploy
+        // di `/antaride-be` — path harfiah akan menunjuk ke luar subfolder.
+        Route::get('/openapi.json', [ApiDocsController::class, 'spec'])->name('spec');
+    });

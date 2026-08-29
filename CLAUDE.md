@@ -23,7 +23,7 @@ komisi, dan status order dihitung di sini, bukan di sana.
 | Panel admin | Blade + **Metronic 8** (Demo 11) + Bootstrap 5 + Alpine | Bukan Inertia/React |
 | Tabel admin | Yajra DataTables (server-side) | |
 | RBAC | Spatie Permission, guard `admin` | |
-| API docs | Scramble → `/docs/api` | Spec diekspor ke `docs/openapi/openapi.json` |
+| API docs | **Swagger UI → `/api/documentation`** (basic auth) | Spesifikasinya dibuat Scramble dari kode, diekspor ke `docs/openapi/openapi.json` |
 | Mobile | Flutter (repo terpisah `antaride-fe`) | Client Dart di-generate dari spec di atas |
 
 ---
@@ -82,6 +82,23 @@ dan tidak ada error yang muncul untuk menjelaskannya. Untuk semua key bersama
 platform ini. Development memakai `queue:work` dengan tiga proses terpisah;
 Horizon hanya untuk produksi Linux. `composer.json` punya `config.platform`
 agar `composer install` tetap berhasil di Windows.
+
+**Octane juga tidak bisa jalan di Windows, dan alasannya sama.**
+`InteractsWithServers::getSubscribedSignals()` mengembalikan `[SIGINT, SIGTERM,
+SIGHUP]` — konstanta yang datang dari `ext-pcntl`. Tanpa ekstensi itu,
+`octane:start` mati sebelum mendengarkan port mana pun:
+
+```
+Undefined constant "Laravel\Octane\Commands\Concerns\SIGINT"
+```
+
+Jadi di Windows, server dev-nya `php artisan serve`. Octane tetap dipakai di
+produksi Linux — lihat `deploy/systemd/antaride-octane.service`.
+
+Konsekuensi yang perlu disadari: worker Octane hidup lama, sementara
+`artisan serve` memulai proses baru setiap request. Bug yang hanya muncul karena
+state bocor antar request TIDAK akan terlihat di Windows. Test suite dijalankan
+di kedua-duanya sebelum rilis.
 
 Jalankan `php artisan antaride:health` untuk memeriksa ketiganya sekaligus.
 
@@ -161,6 +178,23 @@ harganya dari Redis.
 **Otorisasi admin.** Ditegakkan di route dengan `can:`, bukan hanya dengan
 menyembunyikan tombol di Blade.
 
+**Dokumentasi API.** Swagger UI di `/api/documentation`, dijaga HTTP Basic auth
+(`antaride.docs`). Kredensial KOSONG berarti halamannya DITUTUP (404), bukan
+terbuka — `.env` yang lupa memuatnya tidak boleh menerbitkan seluruh permukaan
+API tanpa ada yang menyadarinya.
+
+Spesifikasinya dibuat **Scramble dari kode**, bukan dari anotasi. `l5-swagger`
+sengaja tidak dipakai: anotasi `@OA\` adalah salinan kedua dari aturan yang sudah
+ada di FormRequest, dan dua salinan yang harus sepakat akan menyimpang — yang
+menyimpang selalu dokumentasinya, karena dia tidak dijalankan siapa pun.
+
+Aset Swagger UI dilayani dari `public/vendor/swagger-ui/`, **bukan CDN**. Server
+tanpa akses internet keluar akan menampilkan halaman putih polos, dan kegagalan
+itu terjadi di dalam JavaScript-nya sendiri — tidak ada pesan apa pun di layar.
+Halamannya juga memuat pesan cadangan yang sudah tergambar di HTML, jadi
+kegagalan apa pun meninggalkan sesuatu yang bisa dibaca. Dijaga
+`tests/Feature/Http/ApiDocsTest.php`.
+
 **Query panel admin.** Cursor pagination, bukan offset. Tidak ada `COUNT(*)`
 pada tabel order.
 
@@ -212,7 +246,7 @@ memastikan penjaga itu bekerja untuk setiap sumber alert.
 dev.bat                            menu: service multi-tab, migrasi, cache, tes,
                                    pemeliharaan (agregasi metrik, pangkas log)
 php artisan antaride:health        cek Postgres, Redis, GEO, prefix, OSRM, Centrifugo
-php artisan octane:start --server=roadrunner --host=127.0.0.1 --port=8000 --watch
+php artisan serve --host=127.0.0.1 --port=8000     server dev di WINDOWS
 php artisan scramble:export --path=docs/openapi/openapi.json
 vendor\bin\pint                    format kode (wajib sebelum commit)
 ```

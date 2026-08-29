@@ -443,6 +443,65 @@ disalahpahami saat memeriksa apakah jadwalnya benar.
 
 ---
 
+## 7b. Dokumentasi API (Swagger UI)
+
+Swagger UI di **`/api/documentation`**, dijaga HTTP Basic auth.
+
+Tambahkan ke `.env` produksi:
+
+```
+API_DOCS_USERNAME=itds
+API_DOCS_PASSWORD=itds123
+```
+
+**Kosong berarti halamannya DITUTUP (404), bukan terbuka.** Arah gagal itu
+disengaja: `.env` yang lupa memuatnya tidak boleh menerbitkan seluruh permukaan
+API — setiap endpoint, setiap nama field, setiap aturan validasi — tanpa ada yang
+menyadarinya.
+
+Buat spesifikasinya, lalu periksa:
+
+```bash
+sudo -u www-data php artisan scramble:export --path=docs/openapi/openapi.json
+
+curl -sS -o /dev/null -w '%{http_code}\n' \
+    https://beoulve-dev.biz.id/antaride-be/api/documentation
+# harus: 401   (tanpa kredensial)
+
+curl -sS -o /dev/null -w '%{http_code}\n' -u 'itds:itds123' \
+    https://beoulve-dev.biz.id/antaride-be/api/documentation
+# harus: 200
+```
+
+### Kalau halamannya putih polos
+
+Swagger UI menggambar seluruh halaman dari JavaScript, jadi kegagalan apa pun
+berakhir sebagai layar kosong. Halaman ini sudah memuat pesan cadangan yang
+tergambar di HTML — kalau yang Anda lihat benar-benar putih tanpa teks sama
+sekali, berarti HTML-nya sendiri tidak sampai.
+
+Tiga penyebab, berurutan dari yang paling sering:
+
+| Gejala | Penyebab | Perbaikan |
+|---|---|---|
+| Kotak merah "Dokumentasi belum tergambar", detail menyebut `swagger-ui-bundle.js` | `public/vendor/swagger-ui/` tidak ikut ter-deploy | `git pull` lalu pastikan direktori itu ada |
+| Kotak merah, detail menyebut spesifikasi gagal dimuat | `docs/openapi/openapi.json` belum dibuat | `php artisan scramble:export --path=docs/openapi/openapi.json` |
+| Putih total, tanpa teks apa pun | 500 dari Laravel, bukan masalah Swagger | `tail -50 storage/logs/laravel-*.log` |
+
+Periksa asetnya langsung:
+
+```bash
+curl -sS -o /dev/null -w '%{http_code} %{content_type}\n' \
+    https://beoulve-dev.biz.id/antaride-be/vendor/swagger-ui/swagger-ui-bundle.js
+# harus: 200 application/javascript
+```
+
+**Aset dilayani sendiri, bukan dari CDN.** Itu disengaja: server tanpa akses
+internet keluar — atau jaringan yang memblokir CDN — menghasilkan halaman putih
+yang tidak menyebut penyebabnya sama sekali.
+
+---
+
 ## 8. Deploy ulang
 
 ```bash
@@ -531,3 +590,65 @@ pun petunjuk bahwa masalahnya alamat.
 | **Log rotation** | `LOG_STACK=daily` + `LOG_DAILY_DAYS=14` menangani log Laravel. Log Nginx ditangani logrotate bawaan paket. |
 | **Aset Metronic di repo publik** | Metronic template berbayar, dan repo ini publik — lisensinya melarang redistribusi source-nya. Keputusan sadar; kalau berubah pikiran, `gh repo edit rendyirawann/antaride-be --visibility private`. |
 | **Firewall** | Belum disetel. Yang harus tertutup dari internet: 5432 (Postgres), 6379 (Redis), 8000 (Octane), 8200 (layanan lokasi, kalau diproksi Nginx). |
+
+---
+
+## Deploy PERUBAHAN ke server yang sudah jalan
+
+Untuk server yang sudah di-deploy dari panduan di atas, ini langkah **tambahan**
+yang dibutuhkan perubahan Swagger UI. Selebihnya sudah tercakup bagian 8.
+
+```bash
+cd /var/www/antaride-be
+
+sudo -u www-data php artisan down --render="errors::503"
+
+sudo -u www-data git pull
+sudo -u www-data composer install --no-dev --optimize-autoloader
+sudo -u www-data php artisan migrate --force
+
+# BARU: buat spesifikasi OpenAPI.
+#
+# Tanpa langkah ini halaman dokumentasi mencoba membuatnya sendiri pada
+# pemuatan pertama — yang berhasil, tapi memakan beberapa detik dan
+# menjalankan analisis statis di dalam request web.
+sudo -u www-data php artisan scramble:export --path=docs/openapi/openapi.json
+
+sudo -u www-data php artisan config:cache
+sudo -u www-data php artisan route:cache
+sudo -u www-data php artisan view:cache
+sudo -u www-data php artisan event:cache
+
+sudo systemctl reload antaride-octane
+sudo systemctl restart antaride-queues.target
+
+sudo -u www-data php artisan up
+```
+
+Sebelum `config:cache`, pastikan `.env` sudah memuat:
+
+```
+API_DOCS_USERNAME=itds
+API_DOCS_PASSWORD=itds123
+```
+
+`config:cache` membekukan nilai `env()`. Menambahkannya SETELAH cache dibuat
+berarti nilainya tidak terbaca, dan halaman dokumentasi menjawab 404 — yang
+terlihat seperti route yang tidak terdaftar, bukan seperti konfigurasi yang
+kurang.
+
+Verifikasi setelah `up`:
+
+```bash
+curl -sS -o /dev/null -w 'tanpa auth : %{http_code}\n' \
+    https://beoulve-dev.biz.id/antaride-be/api/documentation
+
+curl -sS -o /dev/null -w 'dengan auth: %{http_code}\n' -u 'itds:itds123' \
+    https://beoulve-dev.biz.id/antaride-be/api/documentation
+
+curl -sS -u 'itds:itds123' \
+    https://beoulve-dev.biz.id/antaride-be/api/documentation/openapi.json \
+    | head -c 120
+```
+
+Harus berturut-turut: `401`, `200`, dan JSON yang dimulai `{"openapi":"3.1.0"`.
