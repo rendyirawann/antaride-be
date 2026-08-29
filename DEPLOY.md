@@ -652,3 +652,119 @@ curl -sS -u 'itds:itds123' \
 ```
 
 Harus berturut-turut: `401`, `200`, dan JSON yang dimulai `{"openapi":"3.1.0"`.
+
+---
+
+## Deploy akun demo
+
+Ini deploy **terpisah** dari yang di atas, dan disengaja terpisah: yang ini
+menyalakan endpoint yang **menerbitkan token tanpa OTP**. Membacanya sebagai
+satu bagian tersendiri lebih baik daripada menyembunyikannya di antara langkah
+rutin.
+
+### Kenapa ini dibutuhkan sama sekali
+
+OTP di proyek ini **tidak dikirim ke mana pun**. Satu-satunya pengirim yang
+terpasang, `LogSmsSender`, menulis kodenya ke berkas log — dan di produksi
+`app()->isProduction()` menyembunyikan kode itu juga dari balasan API.
+
+Akibatnya di server ini: **tidak ada seorang pun yang bisa masuk**. Bukan
+sulit — tidak bisa. Sampai gateway SMS sungguhan terpasang, akun demo satu-
+satunya cara aplikasi bisa diuji di server sama sekali.
+
+### Yang membatasinya
+
+Tiga hal, dan ketiganya harus dilewati sekaligus:
+
+1. **Mati kecuali `ANTARIDE_DEMO_LOGIN=true`.** Server yang lupa menyetelnya
+   MENOLAK — kelalaian berakhir tertutup, bukan terbuka.
+2. **Hanya akun bertanda `demo_role`.** Akun sungguhan tidak bisa dimasuki
+   lewat endpoint ini bahkan kalau uuid-nya diketahui.
+3. **Setiap pemakaian dicatat** ke `storage/logs/demo-*.log` beserta IP-nya.
+
+### Langkah
+
+```bash
+cd /var/www/antaride-be
+
+sudo -u www-data php artisan down --render="errors::503"
+
+sudo -u www-data git pull
+sudo -u www-data composer install --no-dev --optimize-autoloader
+sudo -u www-data php artisan migrate --force
+
+# Membuat tiga akun demo: penumpang, driver, merchant.
+#
+# Aman dijalankan ulang — seeder-nya updateOrCreate berdasarkan nomor HP,
+# bukan create. Menjalankannya dua kali tidak menghasilkan enam akun.
+sudo -u www-data php artisan db:seed --force --class=DemoAccountSeeder
+
+sudo -u www-data php artisan scramble:export --path=docs/openapi/openapi.json
+
+sudo -u www-data php artisan config:cache
+sudo -u www-data php artisan route:cache
+sudo -u www-data php artisan view:cache
+sudo -u www-data php artisan event:cache
+
+sudo systemctl reload antaride-octane
+sudo systemctl restart antaride-queues.target
+
+sudo -u www-data php artisan up
+```
+
+**Sebelum `config:cache`**, `.env` harus memuat:
+
+```
+ANTARIDE_DEMO_LOGIN=true
+```
+
+Alasannya sama dengan `API_DOCS_*` di bagian sebelumnya: `config:cache`
+membekukan nilai `env()`. Menambahkannya setelah cache dibuat berarti fiturnya
+tetap mati, dan yang terlihat di aplikasi bukan pesan galat melainkan **layar
+masuk tanpa daftar akun demo sama sekali** — karena widget-nya memang
+menyembunyikan diri saat fiturnya mati. Gejalanya terbaca seperti aplikasi
+lama yang belum ter-update.
+
+### Verifikasi
+
+```bash
+curl -sS https://beoulve-dev.biz.id/antaride-be/api/v1/auth/demo/accounts | head -c 400
+```
+
+Harus mengembalikan `"enabled":true` dan tiga akun. Kalau `"enabled":false`,
+`.env`-nya belum terbaca — ulangi `config:cache`. Kalau `enabled:true` tapi
+daftarnya kosong, seeder-nya belum jalan.
+
+Lalu buktikan tokennya benar-benar terbit:
+
+```bash
+UUID=$(curl -sS https://beoulve-dev.biz.id/antaride-be/api/v1/auth/demo/accounts \
+    | python3 -c 'import sys,json; print(json.load(sys.stdin)["data"]["accounts"][0]["uuid"])')
+
+curl -sS -X POST https://beoulve-dev.biz.id/antaride-be/api/v1/auth/demo/login \
+    -H 'Content-Type: application/json' \
+    -d "{\"uuid\":\"$UUID\"}" | head -c 200
+```
+
+### Driver demo sengaja diberi saldo Rp 100.000
+
+Ini bukan angka hiasan. `onlyWithCashDeposit` **menyaring keluar** driver yang
+saldonya di bawah batas deposit tunai, dan penyaringan itu terjadi tanpa satu
+pun galat: driver-nya online, posisinya tercatat di Redis, tapi tidak pernah
+ditawari order apa pun.
+
+Ditemukan lewat UAT sebelumnya, dan gejalanya persis terbaca seperti "matching
+rusak". Kalau seeder-nya diubah, saldo ini harus tetap di atas
+`antaride.wallet.driver_cash_deposit_minimum`.
+
+### Mematikannya nanti
+
+Saat gateway SMS sungguhan sudah terpasang:
+
+```bash
+# .env
+ANTARIDE_DEMO_LOGIN=false
+```
+
+lalu `php artisan config:cache` dan reload Octane. Akun-akunnya boleh
+ditinggal — tanpa flag itu, endpoint-nya menolak semuanya.
