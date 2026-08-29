@@ -494,6 +494,13 @@ sudo -u www-data php artisan antaride:aggregate-metrics --days=30
 Di repo `antaride-fe`:
 
 ```bash
+melos run apk:universal:all
+```
+
+Perintah itu menanam `https://beoulve-dev.biz.id/antaride-be/api/v1` dan
+menyalin tiga APK universal ke `Desktop/Antaride-APK/`. Untuk server lain:
+
+```bash
 export ANTARIDE_API_URL="https://domain-anda.id/antaride/api/v1"
 melos run apk:all
 ```
