@@ -70,6 +70,327 @@
                 }
             }
         },
+        "/documentation": {
+            "get": {
+                "operationId": "docs.index",
+                "summary": "Halaman Swagger UI",
+                "tags": [
+                    "ApiDocs"
+                ],
+                "responses": {
+                    "200": {
+                        "description": "",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/documentation/openapi.json": {
+            "get": {
+                "operationId": "docs.spec",
+                "description": "========================================================================\n DIBACA DARI BERKAS, DIBUAT ULANG HANYA KALAU TIDAK ADA\n========================================================================\n `docs/openapi/openapi.json` di-commit ke repo dan diperbarui saat deploy.\n Membacanya dari berkas berarti halaman dokumentasi tidak menjalankan\n analisis statis Scramble pada setiap pemuatan \u2014 analisis itu memindai\n seluruh controller dan memakan beberapa detik.\n\n Kalau berkasnya tidak ada, spesifikasinya dibuat saat itu juga alih-alih\n menyerah. Itu yang mencegah gejala yang paling membingungkan dari halaman\n ini: SWAGGER UI YANG PUTIH POLOS.\n\n Yang terjadi tanpa cadangan itu: endpoint spesifikasi menjawab 404,\n Swagger UI gagal memuatnya, dan karena kegagalannya terjadi di dalam\n JavaScript-nya sendiri, yang tampil adalah halaman kosong tanpa satu pun\n pesan. Orang yang membukanya menyimpulkan server mati.\n========================================================================",
+                "summary": "Spesifikasi OpenAPI",
+                "tags": [
+                    "ApiDocs"
+                ],
+                "responses": {
+                    "200": {
+                        "description": "",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "string"
+                                }
+                            }
+                        },
+                        "headers": {
+                            "Cache-Control": {
+                                "schema": {
+                                    "type": "string",
+                                    "const": "no-store, no-cache, must-revalidate"
+                                }
+                            }
+                        }
+                    },
+                    "503": {
+                        "description": "",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "anyOf": [
+                                        {
+                                            "type": "object",
+                                            "properties": {
+                                                "error": {
+                                                    "type": "string",
+                                                    "const": "Berkas spesifikasi ada tapi isinya tidak sah."
+                                                },
+                                                "perbaikan": {
+                                                    "type": "string",
+                                                    "const": "Buat ulang: php artisan scramble:export --path=docs/openapi/openapi.json"
+                                                }
+                                            },
+                                            "required": [
+                                                "error",
+                                                "perbaikan"
+                                            ]
+                                        },
+                                        {
+                                            "type": "object",
+                                            "properties": {
+                                                "error": {
+                                                    "type": "string",
+                                                    "description": "Bentuk galatnya SENGAJA bukan spesifikasi OpenAPI yang\nkosong. Swagger UI menampilkan pesan \"tidak bisa memuat\"\nyang bisa dibaca untuk JSON yang bukan spesifikasi,\nsementara spesifikasi kosong digambarkannya sebagai\nhalaman tanpa endpoint \u2014 yang terbaca sebagai API yang\ntidak punya apa-apa, bukan sebagai kegagalan.",
+                                                    "const": "Spesifikasi OpenAPI belum dibuat dan gagal dibuat sekarang."
+                                                },
+                                                "perbaikan": {
+                                                    "type": "string",
+                                                    "const": "Jalankan: php artisan scramble:export --path=docs/openapi/openapi.json"
+                                                },
+                                                "detail": {
+                                                    "type": "string"
+                                                }
+                                            },
+                                            "required": [
+                                                "error",
+                                                "perbaikan",
+                                                "detail"
+                                            ]
+                                        }
+                                    ]
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/v1/auth/demo/accounts": {
+            "get": {
+                "operationId": "v1.auth.demo.accounts",
+                "description": "========================================================================\n DAFTAR KOSONG SAAT FITURNYA MATI, BUKAN GALAT\n========================================================================\n Aplikasi memanggil endpoint ini di layar masuk, sebelum pengguna\n melakukan apa pun. Kalau fiturnya mati dan endpoint-nya menjawab galat,\n yang muncul adalah pesan merah di layar pertama yang dilihat pengguna \u2014\n untuk sesuatu yang bukan masalahnya.\n\n Dengan daftar kosong, aplikasi cukup menyembunyikan bagian akun demo dan\n layar masuknya tampil normal.\n========================================================================",
+                "summary": "Daftar akun demo untuk satu aplikasi",
+                "tags": [
+                    "Demo"
+                ],
+                "responses": {
+                    "200": {
+                        "description": "",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "anyOf": [
+                                        {
+                                            "type": "object",
+                                            "properties": {
+                                                "success": {
+                                                    "type": "boolean"
+                                                },
+                                                "data": {
+                                                    "anyOf": [
+                                                        {
+                                                            "type": "object",
+                                                            "properties": {
+                                                                "accounts": {
+                                                                    "type": "array",
+                                                                    "items": {
+                                                                        "type": "string"
+                                                                    }
+                                                                },
+                                                                "enabled": {
+                                                                    "type": "boolean"
+                                                                }
+                                                            },
+                                                            "required": [
+                                                                "accounts",
+                                                                "enabled"
+                                                            ]
+                                                        },
+                                                        {
+                                                            "type": "object",
+                                                            "additionalProperties": {
+                                                                "type": "string"
+                                                            }
+                                                        },
+                                                        {
+                                                            "type": "string"
+                                                        }
+                                                    ]
+                                                }
+                                            },
+                                            "required": [
+                                                "success",
+                                                "data"
+                                            ]
+                                        },
+                                        {
+                                            "type": "object",
+                                            "properties": {
+                                                "success": {
+                                                    "type": "boolean"
+                                                },
+                                                "data": {
+                                                    "anyOf": [
+                                                        {
+                                                            "type": "object",
+                                                            "properties": {
+                                                                "accounts": {
+                                                                    "type": "array",
+                                                                    "items": {
+                                                                        "type": "string"
+                                                                    },
+                                                                    "minItems": 0,
+                                                                    "maxItems": 0,
+                                                                    "additionalItems": false
+                                                                },
+                                                                "enabled": {
+                                                                    "type": "boolean"
+                                                                }
+                                                            },
+                                                            "required": [
+                                                                "accounts",
+                                                                "enabled"
+                                                            ]
+                                                        },
+                                                        {
+                                                            "type": "object",
+                                                            "additionalProperties": {
+                                                                "type": "string"
+                                                            }
+                                                        },
+                                                        {
+                                                            "type": "string"
+                                                        }
+                                                    ]
+                                                }
+                                            },
+                                            "required": [
+                                                "success",
+                                                "data"
+                                            ]
+                                        }
+                                    ]
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/v1/auth/demo/login": {
+            "post": {
+                "operationId": "v1.auth.demo.login",
+                "summary": "Masuk sebagai akun demo",
+                "tags": [
+                    "Demo"
+                ],
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "properties": {
+                                    "uuid": {
+                                        "type": "string",
+                                        "format": "uuid"
+                                    },
+                                    "device_id": {
+                                        "type": [
+                                            "string",
+                                            "null"
+                                        ],
+                                        "maxLength": 120
+                                    },
+                                    "platform": {
+                                        "type": [
+                                            "string",
+                                            "null"
+                                        ],
+                                        "enum": [
+                                            "android",
+                                            "ios",
+                                            "web",
+                                            null
+                                        ]
+                                    }
+                                },
+                                "required": [
+                                    "uuid"
+                                ]
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "success": {
+                                            "type": "boolean"
+                                        },
+                                        "data": {
+                                            "anyOf": [
+                                                {
+                                                    "type": "object",
+                                                    "properties": {
+                                                        "token": {
+                                                            "type": "string"
+                                                        },
+                                                        "token_type": {
+                                                            "type": "string",
+                                                            "const": "Bearer"
+                                                        },
+                                                        "is_new_user": {
+                                                            "type": "boolean"
+                                                        },
+                                                        "user": {
+                                                            "$ref": "#/components/schemas/UserResource"
+                                                        }
+                                                    },
+                                                    "required": [
+                                                        "token",
+                                                        "token_type",
+                                                        "is_new_user",
+                                                        "user"
+                                                    ]
+                                                },
+                                                {
+                                                    "type": "object",
+                                                    "additionalProperties": {
+                                                        "type": "string"
+                                                    }
+                                                },
+                                                {
+                                                    "type": "string"
+                                                }
+                                            ]
+                                        }
+                                    },
+                                    "required": [
+                                        "success",
+                                        "data"
+                                    ]
+                                }
+                            }
+                        }
+                    },
+                    "422": {
+                        "$ref": "#/components/responses/ValidationException"
+                    }
+                }
+            }
+        },
         "/v1/driver/documents": {
             "get": {
                 "operationId": "v1.driver.documents.index",
@@ -4300,6 +4621,79 @@
                     "file"
                 ],
                 "title": "UploadDocumentRequest"
+            },
+            "UserResource": {
+                "type": "object",
+                "properties": {
+                    "uuid": {
+                        "type": "string"
+                    },
+                    "name": {
+                        "type": "string"
+                    },
+                    "phone": {
+                        "type": "string",
+                        "description": "Nomor sendiri ditampilkan penuh dalam bentuk lokal yang enak\ndibaca. Ini halaman profilnya sendiri; menyamarkan nomornya di\nsini hanya membuat dia tidak bisa memastikan nomornya benar.\nKelompok 4-4-sisa, pola yang dipakai di Indonesia."
+                    },
+                    "email": {
+                        "type": [
+                            "string",
+                            "null"
+                        ]
+                    },
+                    "photo_url": {
+                        "type": [
+                            "string",
+                            "null"
+                        ]
+                    },
+                    "gender": {
+                        "type": [
+                            "string",
+                            "null"
+                        ]
+                    },
+                    "birth_date": {
+                        "type": [
+                            "string",
+                            "null"
+                        ]
+                    },
+                    "status": {
+                        "type": "string"
+                    },
+                    "phone_verified": {
+                        "type": "boolean"
+                    },
+                    "referral_code": {
+                        "type": "string"
+                    },
+                    "profile_complete": {
+                        "type": "string",
+                        "description": "Penanda apakah profilnya masih perlu dilengkapi. Dihitung di sini, bukan dibiarkan aplikasi menyimpulkannya dari\nnama yang masih berbentuk \"Pengguna 7890\". Kalau disimpulkan\naplikasi, orang yang benar-benar menamai dirinya begitu akan\nterus-menerus diminta melengkapi profil."
+                    },
+                    "joined_at": {
+                        "type": [
+                            "string",
+                            "null"
+                        ]
+                    }
+                },
+                "required": [
+                    "uuid",
+                    "name",
+                    "phone",
+                    "email",
+                    "photo_url",
+                    "gender",
+                    "birth_date",
+                    "status",
+                    "phone_verified",
+                    "referral_code",
+                    "profile_complete",
+                    "joined_at"
+                ],
+                "title": "UserResource"
             },
             "VerifyOtpRequest": {
                 "type": "object",

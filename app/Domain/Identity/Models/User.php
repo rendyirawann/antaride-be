@@ -52,6 +52,12 @@ class User extends Authenticatable
         'phone_verified_at',
         'referral_code',
         'referred_by_user_id',
+
+        // Akun demo. Hanya diisi seeder — tidak ada jalur di API yang
+        // menjadikan akun sungguhan sebagai akun demo, dan itu disengaja.
+        'demo_role',
+        'demo_order',
+        'demo_note',
     ];
 
     /**

@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use App\Http\Controllers\Api\V1\Auth\DemoController;
 use App\Http\Controllers\Api\V1\Auth\OtpController;
 use App\Http\Controllers\Api\V1\Customer\OrderController as CustomerOrderController;
 use App\Http\Controllers\Api\V1\Customer\ProfileController;
@@ -64,6 +65,30 @@ Route::prefix('auth')->as('auth.')->group(function (): void {
     Route::post('/otp/verify', [OtpController::class, 'verify'])
         ->middleware('throttle:otp-verify')
         ->name('otp.verify');
+
+    /*
+     * ========================================================================
+     *  AKUN DEMO — MASUK TANPA OTP
+     * ========================================================================
+     *  Ada karena OTP di proyek ini TIDAK dikirim ke mana pun: satu-satunya
+     *  pengirim yang terpasang menulis kodenya ke berkas log, dan di produksi
+     *  kode itu pun disembunyikan. Tanpa jalur ini, server yang sudah ter-deploy
+     *  tidak bisa dimasuki siapa pun.
+     *
+     *  MATI secara bawaan (`ANTARIDE_DEMO_LOGIN`), dan hanya melayani akun yang
+     *  bertanda `demo_role`. Lihat `DemoLogin` untuk ketiga lapis penjagaannya.
+     *
+     *  Throttle-nya memakai `otp-verify`, bukan limiter baru: keduanya endpoint
+     *  yang menerbitkan token tanpa sesi sebelumnya, jadi batasnya memang harus
+     *  sama. Limiter terpisah berarti dua angka yang harus dijaga sepakat.
+     * ========================================================================
+     */
+    Route::get('/demo/accounts', [DemoController::class, 'index'])
+        ->name('demo.accounts');
+
+    Route::post('/demo/login', [DemoController::class, 'login'])
+        ->middleware('throttle:otp-verify')
+        ->name('demo.login');
 
     Route::middleware('auth:sanctum')->group(function (): void {
         Route::post('/logout', [OtpController::class, 'logout'])->name('logout');

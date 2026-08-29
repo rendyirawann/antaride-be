@@ -607,6 +607,28 @@ return [
     |
     */
 
+    /*
+    |--------------------------------------------------------------------------
+    | Akun demo
+    |--------------------------------------------------------------------------
+    |
+    | Masuk tanpa OTP untuk akun yang bertanda `demo_role`. Ada karena OTP di
+    | proyek ini TIDAK dikirim ke mana pun (`SMS_DRIVER=log`) — tanpa jalur ini,
+    | server yang sudah ter-deploy tidak bisa diuji sama sekali.
+    |
+    | MATI SECARA BAWAAN, dan itu bukan kehati-hatian berlebihan: yang dilakukan
+    | endpoint ini persis yang dilakukan penyerang kalau dia bisa — menerbitkan
+    | token tanpa membuktikan apa pun.
+    |
+    | Nyalakan HANYA di server pengujian, dan matikan lagi sebelum ada satu pun
+    | data pengguna sungguhan di sana.
+    |
+    */
+
+    'demo' => [
+        'enabled' => (bool) env('ANTARIDE_DEMO_LOGIN', false),
+    ],
+
     'docs' => [
         'username' => (string) env('API_DOCS_USERNAME', 'itds'),
         'password' => (string) env('API_DOCS_PASSWORD', 'itds123'),

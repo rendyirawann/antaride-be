@@ -106,6 +106,31 @@ return [
             'replace_placeholders' => true,
         ],
 
+        /*
+        |----------------------------------------------------------------------
+        | Demo — setiap pemakaian akun demo
+        |----------------------------------------------------------------------
+        |
+        | Masuk lewat akun demo melewati OTP sepenuhnya. Itu memang gunanya, tapi
+        | berarti tidak ada jejak autentikasi yang biasanya tertinggal.
+        |
+        | Kalau nanti ada yang bertanya "kenapa akun ini membuat order itu",
+        | jawabannya harus ada di sini — beserta IP dan perangkatnya. Channel
+        | tersendiri supaya barisnya tidak tertimbun log aplikasi biasa.
+        |
+        | Retensi 90 hari: cukup untuk menelusuri sesi pengujian yang
+        | dipertanyakan, dan tidak menumpuk selamanya untuk fitur yang seharusnya
+        | mati di produksi.
+        |
+        */
+        'demo' => [
+            'driver' => 'daily',
+            'path' => storage_path('logs/demo.log'),
+            'level' => 'info',
+            'days' => 90,
+            'replace_placeholders' => true,
+        ],
+
         'matching' => [
             'driver' => 'daily',
             'path' => storage_path('logs/matching.log'),
