@@ -768,3 +768,175 @@ ANTARIDE_DEMO_LOGIN=false
 
 lalu `php artisan config:cache` dan reload Octane. Akun-akunnya boleh
 ditinggal — tanpa flag itu, endpoint-nya menolak semuanya.
+
+---
+
+## Deploy area layanan + pencarian alamat
+
+Tiga perubahan sekaligus: nama layanan jadi nama merek, area layanan pindah ke
+`.env`, dan pencarian alamat (autocomplete) lewat Nominatim.
+
+### 1. Kode dan migrasi
+
+```bash
+cd /var/www/antaride-be
+
+sudo -u www-data php artisan down --render="errors::503"
+
+sudo -u www-data git pull
+sudo -u www-data composer install --no-dev --optimize-autoloader
+
+# Mengubah nama layanan: "Antar Motor" -> "Antaride",
+# "Antar Barang" -> "AntarExpress".
+#
+# Lewat migrasi, BUKAN `db:seed`. CatalogSeeder memakai insertGetId, jadi
+# menjalankannya lagi akan membuat baris layanan KEDUA dengan kode yang sama —
+# dan sejak itu quote bisa menunjuk ke salah satu dari dua baris dengan tarif
+# yang berbeda.
+sudo -u www-data php artisan migrate --force
+
+sudo -u www-data php artisan scramble:export --path=docs/openapi/openapi.json
+```
+
+### 2. `.env` — area layanan
+
+Ditambahkan **sebelum** `config:cache`:
+
+```
+ANTARIDE_AREA_LAT=3.5697
+ANTARIDE_AREA_LNG=98.7748
+ANTARIDE_AREA_RADIUS_KM=35
+ANTARIDE_AREA_LABEL="Medan dan Lubuk Pakam"
+ANTARIDE_AREA_ZOOM=12
+```
+
+Nilai di atas titik tengah antara Medan dan Lubuk Pakam, radius 35 km — cukup
+melingkupi keduanya (jaraknya sekitar 23 km) beserta sekitarnya.
+
+**Angka ini harus cocok dengan cakupan OSRM Anda.** Kalau OSRM hanya memuat
+sekitar Lubuk Pakam, sempitkan areanya — kalau tidak, aplikasi membuka peta di
+wilayah yang OSRM-nya tidak bisa menghitung rute, dan yang dilihat pengguna
+bukan pesan galat melainkan ongkos yang tidak pernah muncul.
+
+Untuk hanya Lubuk Pakam:
+
+```
+ANTARIDE_AREA_LAT=3.5497
+ANTARIDE_AREA_LNG=98.8756
+ANTARIDE_AREA_RADIUS_KM=15
+ANTARIDE_AREA_LABEL="Lubuk Pakam"
+```
+
+Aplikasi membacanya lewat `GET /api/v1/config` **setiap kali dibuka**, jadi
+menggesernya tidak menuntut membangun ulang APK.
+
+### 3. Nominatim (pencarian alamat)
+
+Tanpa ini, kolom pencarian alamat **tidak muncul sama sekali** di aplikasi —
+bukan muncul lalu gagal. Pemesanan tetap bekerja penuh lewat geser peta.
+
+Cara paling ringan adalah image resmi. Ukuran datanya mengikuti wilayah yang
+diimpor; Sumatera Utara sekitar 200 MB dan impornya memakan belasan menit.
+
+```bash
+# Ambil ekstrak OSM yang SAMA dengan yang dipakai OSRM Anda. Memakai ekstrak
+# berbeda berarti alamat yang bisa dicari tidak sama dengan jalan yang bisa
+# dirutekan — dan selisih itu muncul sebagai alamat yang ditemukan tapi
+# ongkosnya gagal dihitung.
+cd /srv
+sudo mkdir -p nominatim && cd nominatim
+sudo wget https://download.geofabrik.de/asia/indonesia/sumatera-utara-latest.osm.pbf
+
+sudo docker run -d --name nominatim \
+    -e PBF_PATH=/data/sumatera-utara-latest.osm.pbf \
+    -e IMPORT_WIKIPEDIA=false \
+    -e NOMINATIM_PASSWORD="$(openssl rand -hex 16)" \
+    -v /srv/nominatim:/data \
+    -p 127.0.0.1:8080:8080 \
+    --shm-size=1g \
+    --restart unless-stopped \
+    mediagis/nominatim:4.4
+
+# Impor berjalan di latar. Pantau sampai selesai:
+sudo docker logs -f nominatim
+```
+
+`-p 127.0.0.1:8080` mengikatnya ke localhost saja — Nominatim tidak punya
+autentikasi, dan instans yang terbuka ke internet akan dipakai orang lain.
+
+Lalu di `.env`:
+
+```
+NOMINATIM_ENABLED=true
+NOMINATIM_URL=http://127.0.0.1:8080
+NOMINATIM_EMAIL=bayuapriansah10@gmail.com
+NOMINATIM_CACHE_HOURS=72
+```
+
+`NOMINATIM_ENABLED` sengaja terpisah dari url-nya. Sakelar yang disimpulkan
+dari alamat ("masih localhost berarti belum terpasang") salah dua kali: server
+yang MEMANG memasang Nominatim di localhost akan dianggap belum, dan
+pemeriksaannya menuntut `env()` dibaca di luar berkas config — yang
+mengembalikan null tepat setelah `config:cache`.
+
+### 4. Selesaikan deploy
+
+```bash
+sudo -u www-data php artisan config:cache
+sudo -u www-data php artisan route:cache
+sudo -u www-data php artisan view:cache
+sudo -u www-data php artisan event:cache
+
+sudo systemctl reload antaride-octane
+sudo systemctl restart antaride-queues.target
+
+sudo -u www-data php artisan up
+```
+
+### Verifikasi
+
+```bash
+curl -sS https://beoulve-dev.biz.id/antaride-be/api/v1/config
+```
+
+Harus memuat `area` dengan koordinat yang Anda setel, dan
+`"places_enabled":true`. Kalau `false`, `.env`-nya belum terbaca — ulangi
+`config:cache`.
+
+Nama layanan:
+
+```bash
+curl -sS https://beoulve-dev.biz.id/antaride-be/api/v1/service-types \
+    | python3 -m json.tool | grep -E '"name"|"code"'
+```
+
+Harus menampilkan `Antaride` untuk `ride_bike` dan `AntarExpress` untuk `send`.
+
+Pencarian alamat (butuh token — pakai akun demo):
+
+```bash
+UUID=$(curl -sS https://beoulve-dev.biz.id/antaride-be/api/v1/auth/demo/accounts \
+    | python3 -c 'import sys,json; print(json.load(sys.stdin)["data"]["accounts"][0]["uuid"])')
+
+TOKEN=$(curl -sS -X POST https://beoulve-dev.biz.id/antaride-be/api/v1/auth/demo/login \
+    -H 'Content-Type: application/json' -d "{\"uuid\":\"$UUID\"}" \
+    | python3 -c 'import sys,json; print(json.load(sys.stdin)["data"]["token"])')
+
+curl -sS -H "Authorization: Bearer $TOKEN" \
+    'https://beoulve-dev.biz.id/antaride-be/api/v1/places/search?q=lubuk%20pakam'
+```
+
+Daftar kosong berarti Nominatim belum bisa dihubungi — periksa
+`storage/logs/laravel-*.log`, pesannya "Nominatim tidak bisa dihubungi".
+
+### Kalau memakai Nominatim publik untuk uji coba
+
+Bisa, dan hanya untuk uji coba:
+
+```
+NOMINATIM_URL=https://nominatim.openstreetmap.org
+```
+
+Kebijakan penggunaannya membatasi **1 permintaan per detik** dan **melarang
+pemakaian autocomplete** — setiap ketikan adalah satu permintaan, dan pemakaian
+seperti itu diblokir per IP. Jangan dipakai untuk pengguna sungguhan.
