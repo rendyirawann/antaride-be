@@ -776,6 +776,27 @@ ditinggal — tanpa flag itu, endpoint-nya menolak semuanya.
 Tiga perubahan sekaligus: nama layanan jadi nama merek, area layanan pindah ke
 `.env`, dan pencarian alamat (autocomplete) lewat Nominatim.
 
+### Cara singkat
+
+Seluruh langkah di bawah sudah dibungkus satu skrip yang berhenti di kegagalan
+pertama, memulihkan mode pemeliharaan kalau ada yang gagal di tengah, dan
+memeriksa `.env` SEBELUM mematikan aplikasi:
+
+```bash
+cd /var/www/antaride-be
+sudo -u www-data git pull
+sudo bash deploy/update-server.sh
+```
+
+Skrip itu MENOLAK jalan kalau ada kunci `.env` yang belum ada, dan menyebut
+mana saja yang kurang. Salin nilainya dari `deploy/env.production.example`.
+
+Di akhir dia mencetak nama layanan dan area yang benar-benar dibaca server,
+jadi tidak perlu memverifikasi manual.
+
+Bagian di bawah menjelaskan tiap langkahnya — untuk dibaca kalau ada yang gagal,
+atau kalau ingin menjalankannya satu per satu.
+
 ### 1. Kode dan migrasi
 
 ```bash
