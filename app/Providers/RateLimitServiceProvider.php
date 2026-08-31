@@ -77,6 +77,21 @@ class RateLimitServiceProvider extends ServiceProvider
         RateLimiter::for('orders', fn (Request $request) => Limit::perMinute(5)
             ->by($this->userKey($request, 'orders')));
 
+        /*
+         * Pencarian alamat. Dipanggil saat pengguna MENGETIK.
+         *
+         * 60 per menit terdengar besar, dan memang harus: aplikasi menahan
+         * ketikan 400 ms sebelum memanggil, jadi mengetik satu alamat panjang
+         * dengan ragu-ragu wajar menghasilkan belasan permintaan dalam
+         * setengah menit. Batas yang lebih ketat akan memblokir pengetik lambat
+         * — orang yang paling membutuhkan bantuan pencarian alamat.
+         *
+         * Yang dijaga batas ini bukan beban server kita (jawabannya di-cache),
+         * melainkan kuota geocoder di belakangnya.
+         */
+        RateLimiter::for('places', fn (Request $request) => Limit::perMinute(60)
+            ->by($this->userKey($request, 'places')));
+
         // Endpoint yang menggerakkan uang. Sengaja lebih ketat dari orders.
         RateLimiter::for('money', fn (Request $request) => Limit::perMinute(3)
             ->by($this->userKey($request, 'money')));

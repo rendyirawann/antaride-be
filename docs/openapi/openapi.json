@@ -171,6 +171,88 @@
                 }
             }
         },
+        "/v1/config": {
+            "get": {
+                "operationId": "v1.config.show",
+                "tags": [
+                    "Config"
+                ],
+                "responses": {
+                    "200": {
+                        "description": "",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "success": {
+                                            "type": "boolean"
+                                        },
+                                        "data": {
+                                            "anyOf": [
+                                                {
+                                                    "type": "object",
+                                                    "properties": {
+                                                        "area": {
+                                                            "type": "object",
+                                                            "properties": {
+                                                                "lat": {
+                                                                    "type": "number"
+                                                                },
+                                                                "lng": {
+                                                                    "type": "number"
+                                                                },
+                                                                "radius_km": {
+                                                                    "type": "number"
+                                                                },
+                                                                "zoom": {
+                                                                    "type": "number"
+                                                                },
+                                                                "label": {
+                                                                    "type": "string"
+                                                                }
+                                                            },
+                                                            "required": [
+                                                                "lat",
+                                                                "lng",
+                                                                "radius_km",
+                                                                "zoom",
+                                                                "label"
+                                                            ]
+                                                        },
+                                                        "places_enabled": {
+                                                            "type": "boolean",
+                                                            "description": "Aplikasi menyembunyikan kolom pencarian alamat kalau ini false. Server yang belum memasang Nominatim akan mengembalikan daftar\nkosong untuk SETIAP ketikan \u2014 dan kolom pencarian yang tidak\npernah menemukan apa pun terbaca sebagai aplikasi rusak, bukan\nsebagai fitur yang belum dinyalakan. Lebih baik tidak\nmenampilkannya sama sekali."
+                                                        }
+                                                    },
+                                                    "required": [
+                                                        "area",
+                                                        "places_enabled"
+                                                    ]
+                                                },
+                                                {
+                                                    "type": "object",
+                                                    "additionalProperties": {
+                                                        "type": "string"
+                                                    }
+                                                },
+                                                {
+                                                    "type": "string"
+                                                }
+                                            ]
+                                        }
+                                    },
+                                    "required": [
+                                        "success",
+                                        "data"
+                                    ]
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
         "/v1/auth/demo/accounts": {
             "get": {
                 "operationId": "v1.auth.demo.accounts",
@@ -2347,6 +2429,191 @@
                                 }
                             }
                         }
+                    },
+                    "401": {
+                        "$ref": "#/components/responses/AuthenticationException"
+                    }
+                }
+            }
+        },
+        "/v1/places/search": {
+            "get": {
+                "operationId": "v1.places.search",
+                "description": "Dipanggil saat pengguna mengetik di kolom alamat. Aplikasi menahan\n(debounce) sebelum memanggil \u2014 lihat catatan di layar pemilih rute.",
+                "summary": "Cari alamat dari kata kunci",
+                "tags": [
+                    "Place"
+                ],
+                "parameters": [
+                    {
+                        "name": "q",
+                        "in": "query",
+                        "required": true,
+                        "schema": {
+                            "type": "string",
+                            "maxLength": 120
+                        }
+                    },
+                    {
+                        "name": "lat",
+                        "in": "query",
+                        "description": "Titik acuan opsional untuk mengurutkan hasil dari yang terdekat.\nBukan penyaring: penyaringan area dilakukan viewbox di geocoder.",
+                        "schema": {
+                            "type": [
+                                "number",
+                                "null"
+                            ],
+                            "minimum": -90,
+                            "maximum": 90
+                        }
+                    },
+                    {
+                        "name": "lng",
+                        "in": "query",
+                        "schema": {
+                            "type": [
+                                "number",
+                                "null"
+                            ],
+                            "minimum": -180,
+                            "maximum": 180
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "success": {
+                                            "type": "boolean"
+                                        },
+                                        "data": {
+                                            "anyOf": [
+                                                {
+                                                    "type": "object",
+                                                    "properties": {
+                                                        "places": {
+                                                            "type": "array",
+                                                            "items": {}
+                                                        }
+                                                    },
+                                                    "required": [
+                                                        "places"
+                                                    ]
+                                                },
+                                                {
+                                                    "type": "object",
+                                                    "additionalProperties": {
+                                                        "type": "string"
+                                                    }
+                                                },
+                                                {
+                                                    "type": "string"
+                                                }
+                                            ]
+                                        }
+                                    },
+                                    "required": [
+                                        "success",
+                                        "data"
+                                    ]
+                                }
+                            }
+                        }
+                    },
+                    "422": {
+                        "$ref": "#/components/responses/ValidationException"
+                    },
+                    "401": {
+                        "$ref": "#/components/responses/AuthenticationException"
+                    }
+                }
+            }
+        },
+        "/v1/places/reverse": {
+            "get": {
+                "operationId": "v1.places.reverse",
+                "description": "Dipakai dua kali di layar pemilih rute: saat GPS menemukan posisi\npengguna, dan setiap kali dia berhenti menggeser peta.",
+                "summary": "Alamat untuk satu koordinat",
+                "tags": [
+                    "Place"
+                ],
+                "parameters": [
+                    {
+                        "name": "lat",
+                        "in": "query",
+                        "required": true,
+                        "schema": {
+                            "type": "number",
+                            "minimum": -90,
+                            "maximum": 90
+                        }
+                    },
+                    {
+                        "name": "lng",
+                        "in": "query",
+                        "required": true,
+                        "schema": {
+                            "type": "number",
+                            "minimum": -180,
+                            "maximum": 180
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "`place: null` BUKAN galat. Titik di tengah sawah memang tidak punya\nalamat, dan aplikasi menanganinya dengan membiarkan kolomnya kosong\nuntuk diisi sendiri.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "success": {
+                                            "type": "boolean"
+                                        },
+                                        "data": {
+                                            "anyOf": [
+                                                {
+                                                    "type": "object",
+                                                    "properties": {
+                                                        "place": {
+                                                            "type": [
+                                                                "object",
+                                                                "null"
+                                                            ],
+                                                            "additionalProperties": {}
+                                                        }
+                                                    },
+                                                    "required": [
+                                                        "place"
+                                                    ]
+                                                },
+                                                {
+                                                    "type": "object",
+                                                    "additionalProperties": {
+                                                        "type": "string"
+                                                    }
+                                                },
+                                                {
+                                                    "type": "string"
+                                                }
+                                            ]
+                                        }
+                                    },
+                                    "required": [
+                                        "success",
+                                        "data"
+                                    ]
+                                }
+                            }
+                        }
+                    },
+                    "422": {
+                        "$ref": "#/components/responses/ValidationException"
                     },
                     "401": {
                         "$ref": "#/components/responses/AuthenticationException"

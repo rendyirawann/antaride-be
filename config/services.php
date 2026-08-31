@@ -24,6 +24,49 @@ return [
 
     /*
     |--------------------------------------------------------------------------
+    | Nominatim — pencarian & reverse geocoding alamat (self-host)
+    |--------------------------------------------------------------------------
+    |
+    | Pasangan alami OSRM: data OSM yang sama, mesin yang sama-sama gratis.
+    |
+    | `url` MENUNJUK KE MANA menentukan apakah ini boleh dipakai produksi.
+    | Nominatim publik (nominatim.openstreetmap.org) membatasi 1 permintaan per
+    | detik dan kebijakannya MELARANG pemakaian autocomplete — setiap ketikan
+    | adalah satu permintaan, dan pemakaian seperti itu diblokir. Bawaannya
+    | karena itu localhost: server yang belum memasang Nominatim gagal
+    | terhubung dan fiturnya mati dengan jelas, bukan diam-diam melanggar
+    | kebijakan orang lain.
+    |
+    | `email` diminta kebijakan penggunaan Nominatim supaya pemilik instans bisa
+    | dihubungi kalau ada masalah. Wajib diisi kalau url-nya bukan milik sendiri.
+    |
+    */
+
+    'nominatim' => [
+        /*
+         * Sakelar eksplisit, BUKAN disimpulkan dari url-nya.
+         *
+         * Godaan pertama adalah menganggap "url masih localhost berarti belum
+         * terpasang". Itu salah dua kali: server yang MEMANG memasang Nominatim
+         * di localhost akan dianggap belum, dan pemeriksaannya menuntut env()
+         * dibaca di luar berkas config — yang mengembalikan null begitu
+         * `config:cache` dijalankan, jadi fiturnya mati diam-diam di produksi
+         * tepat setelah langkah deploy yang wajib.
+         */
+        'enabled' => (bool) env('NOMINATIM_ENABLED', false),
+
+        'url' => env('NOMINATIM_URL', 'http://127.0.0.1:8080'),
+        'email' => env('NOMINATIM_EMAIL'),
+        'timeout' => (float) env('NOMINATIM_TIMEOUT', 4),
+        'connect_timeout' => (float) env('NOMINATIM_CONNECT_TIMEOUT', 1),
+
+        // Alamat jarang berubah, dan hasil yang sama diminta berulang kali oleh
+        // orang berbeda di kota yang sama.
+        'cache_hours' => (int) env('NOMINATIM_CACHE_HOURS', 72),
+    ],
+
+    /*
+    |--------------------------------------------------------------------------
     | Google Places — autocomplete alamat
     |--------------------------------------------------------------------------
     |

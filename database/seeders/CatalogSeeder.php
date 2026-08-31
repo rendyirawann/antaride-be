@@ -51,7 +51,7 @@ class CatalogSeeder extends Seeder
         $definitions = [
             [
                 'code' => 'send',
-                'name' => 'Antar Barang',
+                'name' => 'AntarExpress',
                 'description' => 'Kirim paket atau dokumen dalam kota',
                 'vehicle_class' => 'motorcycle',
                 'sort_order' => 1,
@@ -63,7 +63,7 @@ class CatalogSeeder extends Seeder
             ],
             [
                 'code' => 'ride_bike',
-                'name' => 'Antar Motor',
+                'name' => 'Antaride',
                 'description' => 'Perjalanan dengan sepeda motor',
                 'vehicle_class' => 'motorcycle',
                 'sort_order' => 2,

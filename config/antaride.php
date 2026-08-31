@@ -247,6 +247,45 @@ return [
     |
     */
 
+    /*
+    |--------------------------------------------------------------------------
+    | Area layanan
+    |--------------------------------------------------------------------------
+    |
+    | SATU sumber kebenaran untuk tiga hal yang harus sepakat:
+    |
+    |   1. Titik tengah peta saat aplikasi dibuka sebelum GPS menjawab.
+    |   2. Pembatas hasil pencarian alamat (viewbox geocoder).
+    |   3. Cakupan yang DIHARAPKAN ada di OSRM.
+    |
+    | Ketiganya pernah berbeda: peta membuka Medan sementara OSRM di server
+    | hanya memuat sekitar Lubuk Pakam. Yang terlihat pengguna bukan pesan
+    | galat, melainkan peta yang membuka kota yang salah lalu menolak menghitung
+    | ongkos tanpa alasan yang bisa dia mengerti.
+    |
+    | Nilainya di .env supaya area bisa digeser tanpa membangun ulang APK —
+    | aplikasi membacanya lewat GET /v1/config.
+    |
+    */
+
+    'area' => [
+        // Titik tengah antara Medan dan Lubuk Pakam.
+        'lat' => (float) env('ANTARIDE_AREA_LAT', 3.5697),
+        'lng' => (float) env('ANTARIDE_AREA_LNG', 98.7748),
+
+        // Radius yang mencakup keduanya beserta sekitarnya. Jarak Medan ke
+        // Lubuk Pakam sekitar 23 km, jadi 35 km dari titik tengah memberi
+        // ruang lebih di kedua ujungnya.
+        'radius_km' => (float) env('ANTARIDE_AREA_RADIUS_KM', 35),
+
+        // Ditampilkan di aplikasi saat pencarian alamat tidak menemukan apa pun.
+        'label' => env('ANTARIDE_AREA_LABEL', 'Medan dan Lubuk Pakam'),
+
+        // Zoom awal peta. 12 memperlihatkan sekitar 20 km melintang — cukup
+        // untuk mengenali kota, cukup dekat untuk mengenali jalan besar.
+        'zoom' => (float) env('ANTARIDE_AREA_ZOOM', 12),
+    ],
+
     'geo' => [
         'zone_driver' => env('GEO_ZONE_DRIVER', 'postgis'),
         'redis_command' => env('REDIS_GEO_COMMAND', 'georadius'),

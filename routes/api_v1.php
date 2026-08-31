@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use App\Http\Controllers\Api\V1\Auth\DemoController;
 use App\Http\Controllers\Api\V1\Auth\OtpController;
+use App\Http\Controllers\Api\V1\ConfigController;
 use App\Http\Controllers\Api\V1\Customer\OrderController as CustomerOrderController;
 use App\Http\Controllers\Api\V1\Customer\ProfileController;
 use App\Http\Controllers\Api\V1\Customer\QuoteController;
@@ -12,6 +13,7 @@ use App\Http\Controllers\Api\V1\Driver\DocumentController as DriverDocumentContr
 use App\Http\Controllers\Api\V1\Driver\OrderController as DriverOrderController;
 use App\Http\Controllers\Api\V1\Driver\StatusController as DriverStatusController;
 use App\Http\Controllers\Api\V1\NotificationController;
+use App\Http\Controllers\Api\V1\PlaceController;
 use App\Http\Responses\ApiResponse;
 use Illuminate\Support\Facades\Route;
 
@@ -109,6 +111,14 @@ Route::prefix('auth')->as('auth.')->group(function (): void {
 Route::get('/service-types', [QuoteController::class, 'serviceTypes'])
     ->name('service-types.index');
 
+/*
+ * Konfigurasi aplikasi: area layanan dan sakelar fitur.
+ *
+ * Tanpa autentikasi dengan alasan yang sama seperti service-types — aplikasi
+ * membutuhkannya sebelum ada sesi, dan isinya bukan rahasia.
+ */
+Route::get('/config', [ConfigController::class, 'show'])->name('config.show');
+
 // -----------------------------------------------------------------------------
 // Customer
 // -----------------------------------------------------------------------------
@@ -127,6 +137,22 @@ Route::middleware('auth:sanctum')->group(function (): void {
         Route::post('/restore', [ProfileController::class, 'cancelDeletion'])
             ->name('deletion.cancel');
     });
+
+    /*
+     * --- Pencarian alamat ---
+     *
+     * Di balik login: yang dijaga bukan datanya (alamat bukan rahasia)
+     * melainkan kuota geocoder di belakangnya. Endpoint terbuka yang
+     * meneruskan ke layanan berkuota adalah cara termudah membuat instans
+     * Nominatim sendiri diblokir oleh lalu lintas orang lain.
+     */
+    Route::prefix('places')
+        ->as('places.')
+        ->middleware('throttle:places')
+        ->group(function (): void {
+            Route::get('/search', [PlaceController::class, 'search'])->name('search');
+            Route::get('/reverse', [PlaceController::class, 'reverse'])->name('reverse');
+        });
 
     // --- Estimasi harga ---
     //
